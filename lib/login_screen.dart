@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:http/http.dart' as http; // ADICIONADO
+import 'dart:convert'; // ADICIONADO para jsonDecode
 import 'main.dart'; // AnimatedScaleButton
 import 'dashboard_screen.dart';
 
@@ -88,7 +90,7 @@ class LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // === VERIFICAÇÃO DE ATUALIZAÇÃO (mantida via .env) ===
+  // === VERIFICAÇÃO DE ATUALIZAÇÃO (via .env) ===
   Future<void> _verificarAtualizacao() async {
     try {
       final baseUrl = dotenv.env['API_BASE_URL'] ?? '';
@@ -108,7 +110,7 @@ class LoginScreenState extends State<LoginScreen> {
 
       if (response.statusCode != 200) return;
 
-      final data = jsonDecode(response.body);
+      final data = jsonDecode(response.body); // AGORA FUNCIONA
       if (data['status'] != 'success') return;
 
       final sha256Checksum = (data['sha256Checksum'] ?? '').toString().toLowerCase();
@@ -122,17 +124,17 @@ class LoginScreenState extends State<LoginScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => WillPopScope(
-          onWillPop: () async => false,
+        builder: (_) => PopScope( // SUBSTITUÍDO WillPopScope por PopScope
+          canPop: false,
           child: AlertDialog(
             title: const Text('Atualização Obrigatória'),
             content: Text('Nova versão ($ultimaVersao) disponível! Atualize agora.'),
             actions: [
               TextButton(
                 onPressed: () async {
-                  final url = Uri.parse('$apkUrl?ts=${DateTime.now().millisecondsSinceEpoch}');
-                  if (await canLaunchUrl(url)) {
-                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  final downloadUrl = Uri.parse('$apkUrl?ts=${DateTime.now().millisecondsSinceEpoch}');
+                  if (await canLaunchUrl(downloadUrl)) {
+                    await launchUrl(downloadUrl, mode: LaunchMode.externalApplication);
                   }
                 },
                 child: const Text('Atualizar'),
@@ -142,7 +144,7 @@ class LoginScreenState extends State<LoginScreen> {
         ),
       );
     } catch (e) {
-      // Silencioso em caso de erro
+      // Erro silencioso
     }
   }
 

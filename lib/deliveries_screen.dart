@@ -1,4 +1,4 @@
-// deliveries_screen.dart - PARTE 1 (CORRIGIDA COM FIRESTORE)
+// deliveries_screen.dart - ARQUIVO ÚNICO (PARTE 1 + PARTE 2 CORRIGIDAS)
 import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +12,9 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'main.dart';
 import 'dashboard_screen.dart';
 import 'scanner_screen.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'constants/delivery_status.dart';
 
 @immutable
 class DeliveriesScreen extends StatefulWidget {
@@ -32,7 +35,6 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
   List<Map<String, dynamic>> _pendingDeliveries = [];
   List<Map<String, dynamic>> _completedDeliveries = [];
   bool _isLoading = true;
-  bool _isRefreshing = false;
   late SharedPreferences _prefs;
   String? _errorMessage;
   late TabController _tabController;
@@ -42,7 +44,6 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
   static const Color success = Color(0xFF48BB78);
   static const Color danger = Color(0xFFE53E3E);
   static const Color info = Color(0xFF4299E1);
-  static const Color light = Color(0xFFF7FAFC);
   static const Color dark = Color(0xFF1A202C);
   static const Color cardBg = Color(0xFF2C2C2E);
 
@@ -56,9 +57,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
     });
 
     _initializePrefs().then((_) {
-      if (mounted) {
-        _fetchDeliveries();
-      }
+      if (mounted) _fetchDeliveries();
     });
   }
 
@@ -116,24 +115,25 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
 
       final firestore = FirebaseFirestore.instance;
 
-      // Pendentes: status em andamento ou pendente
       final pendingSnapshot = await firestore
           .collection('pedidos')
           .where('entregador', isEqualTo: entregador)
-          .where('status', whereIn: ['pendente', 'em andamento'])
+          .where('status', whereIn: [
+            DeliveryStatus.pendente,
+            DeliveryStatus.emAndamento,
+            DeliveryStatus.saiuParaEntrega,
+          ])
           .get();
 
-      // Concluídas: status concluído e data_conclusao nas datas selecionadas
       final completedSnapshot = await firestore
           .collection('pedidos')
           .where('entregador', isEqualTo: entregador)
-          .where('status', isEqualTo: 'concluido')
+          .where('status', isEqualTo: DeliveryStatus.concluido)
           .get();
 
       final List<Map<String, dynamic>> pendentes = [];
       final List<Map<String, dynamic>> concluidas = [];
 
-      // Processa pendentes
       for (var doc in pendingSnapshot.docs) {
         final data = doc.data();
         data['id'] = doc.id;
@@ -142,16 +142,13 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
         pendentes.add(data);
       }
 
-      // Processa concluídas
       for (var doc in completedSnapshot.docs) {
         final data = doc.data();
         final concluido = data['data_conclusao'] as Timestamp?;
         if (concluido == null) continue;
 
         final dateStr = DateFormat('yyyy-MM-dd').format(concluido.toDate());
-        if (!_selectedDates.any((d) => DateFormat('yyyy-MM-dd').format(d) == dateStr)) {
-          continue;
-        }
+        if (!_selectedDates.any((d) => DateFormat('yyyy-MM-dd').format(d) == dateStr)) continue;
 
         data['id'] = doc.id;
         data['is_completed'] = true;
@@ -162,21 +159,22 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
       _pendingDeliveries = pendentes;
       _completedDeliveries = concluidas;
 
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      _startNotificationTimer();
+      if (mounted) {
+        setState(() => _isLoading = false);
+        _startNotificationTimer();
+      }
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-        _errorMessage = 'Erro ao carregar entregas: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Erro ao carregar entregas: $e';
+        });
+      }
     }
   }
 
   // === MARCA COMO CONCLUÍDO ===
   Future<void> _markAsCompleted(String id) async {
-    final entregador = _prefs.getString('entregador') ?? '';
     setState(() => _isLoading = true);
 
     try {
@@ -193,7 +191,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
       final duracaoMinutos = duracao.inMinutes.toDouble();
 
       await docRef.update({
-        'status': 'concluido',
+        'status': DeliveryStatus.concluido,
         'data_conclusao': FieldValue.serverTimestamp(),
         'duracao_minutos': duracaoMinutos,
       });
@@ -201,85 +199,93 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
       await enviarMensagemConcluido(data['cliente']?['telefone']);
       await _fetchDeliveries();
 
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.white),
-              SizedBox(width: 12),
-              Text('Entrega concluída com sucesso!'),
-            ],
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 12),
+                Text('Entrega concluída com sucesso!'),
+              ],
+            ),
+            backgroundColor: success,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          backgroundColor: success,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      );
+        );
+      }
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.error, color: Colors.white),
-              const SizedBox(width: 12),
-              Expanded(child: Text('Erro ao concluir: $e')),
-            ],
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Erro ao concluir: $e')),
+              ],
+            ),
+            backgroundColor: danger,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          backgroundColor: danger,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      );
+        );
+      }
     }
   }
 
-  // === EXCLUI ENTREGA ===
+  // === DEVOLVE AO PROCESSAMENTO ===
   Future<void> _deleteDelivery(String id, bool isCompleted) async {
     setState(() => _isLoading = true);
 
     try {
       final docRef = FirebaseFirestore.instance.collection('pedidos').doc(id);
-      await docRef.update({'status': 'excluido'});
+
+      await docRef.update({
+        'status': 'processando',
+        'entregador': null,
+        'timestamp_atribuicao': FieldValue.delete(),
+      });
 
       await _fetchDeliveries();
-      if (!mounted) return;
-
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.delete_sweep, color: Colors.white),
-              SizedBox(width: 12),
-              Text('Entrega excluída com sucesso!'),
-            ],
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.restore, color: Colors.white),
+                SizedBox(width: 12),
+                Text('Entrega devolvida ao processamento!'),
+              ],
+            ),
+            backgroundColor: const Color(0xFF16A34A),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          backgroundColor: danger,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      );
+        );
+      }
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.error, color: Colors.white),
-              const SizedBox(width: 12),
-              Expanded(child: Text('Erro ao excluir: $e')),
-            ],
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Erro ao devolver: $e')),
+              ],
+            ),
+            backgroundColor: const Color(0xFFEF4444),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          backgroundColor: danger,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      );
+        );
+      }
     }
   }
 
@@ -356,127 +362,130 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
 
   // === DETALHES DO PEDIDO ===
   void _showDeliveryDetails(BuildContext context, Map<String, dynamic> delivery) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [primary.withOpacity(0.2), primary.withOpacity(0.1)],
-                        ),
-                        borderRadius: BorderRadius.circular(16),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [primary.withValues(alpha: 0.2), primary.withValues(alpha: 0.1)],
                       ),
-                      child: const Icon(Icons.description_outlined, color: primary, size: 28),
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Pedido #${delivery['id']}',
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: dark,
-                            ),
-                          ),
-                          Text(
-                            DateFormat('dd/MM/yyyy às HH:mm').format(
-                                (delivery['timestamp_atribuicao'] as Timestamp).toDate()),
-                            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildDetailSection(
-                      icon: Icons.location_on_outlined,
-                      iconColor: danger,
-                      title: 'Endereço de Entrega',
-                      content:
-                          '${delivery['rua'] ?? 'N/A'}, ${delivery['numero'] ?? 'S/N'}\n${delivery['bairro'] ?? 'N/A'}\n${delivery['cidade'] ?? 'N/A'} - ${delivery['estado'] ?? ''}',
-                    ),
-                    if (delivery['cep'] != null && delivery['cep'].toString().trim().isNotEmpty)
-                      _buildDetailSection(
-                        icon: Icons.pin_drop_outlined,
-                        iconColor: info,
-                        title: 'CEP',
-                        content: delivery['cep'],
-                      ),
-                    _buildDetailSection(
-                      icon: Icons.phone_outlined,
-                      iconColor: success,
-                      title: 'Contato',
-                      content: delivery['cliente']?['telefone'] ?? 'N/A',
-                    ),
-                    const SizedBox(height: 24),
-                    Row(
+                    child: const Icon(Icons.description_outlined, color: primary, size: 28),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Text(
+                          'Pedido #${delivery['id']}',
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: dark,
+                          ),
+                        ),
+                        Text(
+                          DateFormat('dd/MM/yyyy às HH:mm').format(
+                              (delivery['timestamp_atribuicao'] as Timestamp).toDate()),
+                          style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildDetailSection(
+                    icon: Icons.location_on_outlined,
+                    iconColor: danger,
+                    title: 'Endereço de Entrega',
+                    content:
+                        '${delivery['endereco']?['rua'] ?? 'N/A'}, ${delivery['endereco']?['numero'] ?? 'S/N'}\n'
+                        '${delivery['endereco']?['bairro'] ?? 'N/A'}\n'
+                        '${delivery['endereco']?['cidade'] ?? 'N/A'}',
+                  ),
+                  // CEP – verificação segura
+                  if ((delivery['endereco']?['cep']?.toString().trim().isNotEmpty ?? false))
+                    _buildDetailSection(
+                      icon: Icons.pin_drop_outlined,
+                      iconColor: info,
+                      title: 'CEP',
+                      content: delivery['endereco']?['cep'],
+                    ),
+                  _buildDetailSection(
+                    icon: Icons.phone_outlined,
+                    iconColor: success,
+                    title: 'Contato',
+                    content: delivery['cliente']?['telefone'] ?? 'N/A',
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildActionButton(
+                          onPressed: () => _showMapOptions(context, delivery),
+                          icon: Icons.map_outlined,
+                          label: 'Ver Mapa',
+                          color: info,
+                        ),
+                      ),
+                      if (delivery['cliente']?['telefone'] != null &&
+                          delivery['cliente']['telefone'] != 'N/A' &&
+                          delivery['cliente']['telefone'].toString().trim().isNotEmpty) ...[
+                        const SizedBox(width: 12),
                         Expanded(
                           child: _buildActionButton(
-                            onPressed: () => _showMapOptions(context, delivery),
-                            icon: Icons.map_outlined,
-                            label: 'Ver Mapa',
-                            color: info,
-                          ),
-                        ),
-                        if (delivery['cliente']?['telefone'] != null &&
-                            delivery['cliente']['telefone'] != 'N/A' &&
-                            delivery['cliente']['telefone'].toString().trim().isNotEmpty) ...[
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildActionButton(
-                              onPressed: () async {
-                                final phone = delivery['cliente']['telefone'].toString().replaceAll(RegExp(r'\D'), '');
-                                final formatted = phone.startsWith('55') ? phone : '55$phone';
-                                final uri = Uri.parse('tel:+$formatted');
-                                if (await canLaunchUrl(uri)) {
-                                  await launchUrl(uri);
-                                } else {
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Não foi possível discar')),
-                                    );
-                                  }
+                            onPressed: () async {
+                              final phone = delivery['cliente']['telefone'].toString().replaceAll(RegExp(r'\D'), '');
+                              final formatted = phone.startsWith('55') ? phone : '55$phone';
+                              final uri = Uri.parse('tel:+$formatted');
+                              if (await canLaunchUrl(uri)) {
+                                await launchUrl(uri);
+                              } else {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Não foi possível discar')),
+                                  );
                                 }
-                              },
-                              icon: Icons.phone,
-                              label: 'Ligar',
-                              color: success,
+                              }
+                            },
+                            icon: Icons.phone,
+                            label: 'Ligar',
+                            color: success,
                             ),
                           ),
                         ],
@@ -506,7 +515,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.1),
+              color: iconColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, color: iconColor, size: 22),
@@ -608,7 +617,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
             Container(
               width: 48,
               height: 48,
-              decoration: BoxDecoration(color: iconColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+              decoration: BoxDecoration(color: iconColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
               child: Icon(icon, color: iconColor, size: 24),
             ),
             const SizedBox(width: 16),
@@ -662,18 +671,29 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
     if (mounted) Navigator.pop(context);
   }
 
-  String _buildAddressString(Map<String, dynamic> d) {
-    final rua = d['rua'] ?? '';
-    final num = (d['numero']?.toString().trim().isNotEmpty == true) ? d['numero'] : '';
-    final bairro = d['bairro'] ?? '';
-    final cidade = d['cidade'] ?? '';
-    final estado = d['estado'] ?? '';
-    final cep = d['cep'] ?? '';
-    if (rua.isEmpty && num.isEmpty && bairro.isEmpty) return '';
-    return '$rua $num, $bairro, $cidade - $estado, $cep, Brasil';
-  }
+String _buildAddressString(Map<String, dynamic> d) {
+  final e = d['endereco'] ?? {};
 
-// PARTE 2 - CORRIGIDA COM FIRESTORE
+  final rua = e['rua']?.toString().trim() ?? '';
+  final num = e['numero']?.toString().trim() ?? '';
+  final bairro = e['bairro']?.toString().trim() ?? '';
+  final cidade = e['cidade']?.toString().trim() ?? '';
+  final cep = e['cep']?.toString().trim() ?? '';
+
+  if (rua.isEmpty && bairro.isEmpty && cidade.isEmpty) return '';
+
+  final ruaLinha = num.isNotEmpty ? '$rua, $num' : rua;
+
+  final buffer = <String>[];
+
+  if (ruaLinha.isNotEmpty) buffer.add(ruaLinha);
+  if (bairro.isNotEmpty) buffer.add(bairro);
+  if (cidade.isNotEmpty) buffer.add(cidade);
+  if (cep.isNotEmpty) buffer.add(cep);
+
+  return buffer.join('\n');
+}
+
   Widget _buildModernDialog({
     required IconData icon,
     required Color iconColor,
@@ -700,7 +720,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.1),
+                color: iconColor.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: iconColor, size: 32),
@@ -788,7 +808,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
           icon: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: primary.withOpacity(0.1),
+              color: primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(Icons.arrow_back, color: primary, size: 20),
@@ -828,7 +848,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                 borderRadius: BorderRadius.circular(14),
                 boxShadow: [
                   BoxShadow(
-                    color: primary.withOpacity(0.3),
+                    color: primary.withValues(alpha: 0.3),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -842,7 +862,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                 letterSpacing: 0.2,
               ),
               tabs: const [
-                Tab(text: 'Pendentes'),
+                Tab(text: 'Em Andamento'),
                 Tab(text: 'Concluídos'),
               ],
             ),
@@ -863,7 +883,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: primary.withOpacity(0.2),
+                              color: primary.withValues(alpha: 0.2),
                               blurRadius: 20,
                               spreadRadius: 5,
                             ),
@@ -896,7 +916,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                           borderRadius: BorderRadius.circular(24),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.08),
+                              color: Colors.black.withValues(alpha: 0.08),
                               blurRadius: 20,
                               offset: const Offset(0, 4),
                             ),
@@ -908,7 +928,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                             Container(
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
-                                color: danger.withOpacity(0.1),
+                                color: danger.withValues(alpha: 0.1),
                                 shape: BoxShape.circle,
                               ),
                               child: const Icon(
@@ -967,7 +987,6 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Header Card
                           Container(
                             padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(
@@ -982,7 +1001,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                               borderRadius: BorderRadius.circular(20),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
+                                  color: Colors.black.withValues(alpha: 0.05),
                                   blurRadius: 15,
                                   offset: const Offset(0, 4),
                                 ),
@@ -1113,7 +1132,6 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                       ),
                     ),
 
-          // Floating QR Button
           DraggableFloatingButton(
             initialOffset: Offset(size.width - 80, size.height - 140 - kBottomNavigationBarHeight),
             onPressed: () async {
@@ -1188,10 +1206,10 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: iconColor.withOpacity(0.08),
+        color: iconColor.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: iconColor.withOpacity(0.2),
+          color: iconColor.withValues(alpha: 0.2),
           width: 1,
         ),
       ),
@@ -1201,7 +1219,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.15),
+              color: iconColor.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: iconColor, size: 20),
@@ -1245,7 +1263,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 15,
               offset: const Offset(0, 4),
             ),
@@ -1315,7 +1333,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
               gradient: LinearGradient(
                 colors: [
                   cardBg,
-                  cardBg.withOpacity(0.95),
+                  cardBg.withValues(alpha: 0.95),
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -1323,7 +1341,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.15),
+                  color: Colors.black.withValues(alpha: 0.15),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -1346,13 +1364,13 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: completed
-                                    ? [success, success.withOpacity(0.8)]
-                                    : [primary, Color(0xFFFF9A56)],
+                                    ? [success, success.withValues(alpha: 0.8)]
+                                    : [primary, const Color(0xFFFF9A56)],
                               ),
                               borderRadius: BorderRadius.circular(10),
                               boxShadow: [
                                 BoxShadow(
-                                  color: (completed ? success : primary).withOpacity(0.3),
+                                  color: (completed ? success : primary).withValues(alpha: 0.3),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
@@ -1373,7 +1391,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                             Container(
                               padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
-                                color: success.withOpacity(0.2),
+                                color: success.withValues(alpha: 0.2),
                                 shape: BoxShape.circle,
                               ),
                               child: const Icon(
@@ -1390,7 +1408,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.1),
+                              color: Colors.white.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: const Icon(
@@ -1405,7 +1423,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  d['bairro'] ?? 'N/A',
+                                  d['endereco']?['bairro'] ?? 'N/A',
                                   style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,
@@ -1415,10 +1433,10 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  '${d['rua'] ?? 'N/A'}, ${d['numero'] ?? 'S/N'}',
+                                  '${d['endereco']?['rua'] ?? 'N/A'}, ${d['endereco']?['numero'] ?? 'S/N'}',
                                   style: TextStyle(
                                     fontSize: 13,
-                                    color: Colors.white.withOpacity(0.7),
+                                    color: Colors.white.withValues(alpha: 0.7),
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -1431,7 +1449,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.08),
+                          color: Colors.white.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Row(
@@ -1461,7 +1479,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.2),
+                      color: Colors.black.withValues(alpha: 0.2),
                       borderRadius: const BorderRadius.vertical(
                         bottom: Radius.circular(20),
                       ),
@@ -1493,20 +1511,20 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                         const SizedBox(width: 8),
                         _buildCardActionButton(
                           ctx,
-                          icon: Icons.delete_outline_rounded,
+                          icon: Icons.restore,
                           color: danger,
                           onPressed: () => showDialog(
                             context: ctx,
                             builder: (_) => _buildModernDialog(
-                              icon: Icons.delete_outline,
+                              icon: Icons.restore,
                               iconColor: danger,
-                              title: 'Confirmar Exclusão',
-                              message: 'Tem certeza que deseja excluir esta entrega?',
+                              title: 'Devolver ao Processamento',
+                              message: 'O pedido voltará para a fila e o entregador será removido.',
                               primaryAction: () {
                                 Navigator.pop(ctx);
                                 _deleteDelivery(d['id'], completed);
                               },
-                              primaryLabel: 'Excluir',
+                              primaryLabel: 'Devolver',
                               secondaryAction: () => Navigator.pop(ctx),
                               secondaryLabel: 'Cancelar',
                             ),
@@ -1535,7 +1553,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.2),
+          color: color.withValues(alpha: 0.2),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(icon, color: Colors.white, size: 22),
@@ -1589,14 +1607,14 @@ class _DraggableFloatingButtonState extends State<DraggableFloatingButton> {
         child: Container(
           decoration: BoxDecoration(
             gradient: const LinearGradient(
-              colors: [_DeliveriesScreenState.primary, Color(0xFFFF9A56)],
+              colors: [Color(0xFFF28C38), Color(0xFFFF9A56)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: _DeliveriesScreenState.primary.withOpacity(0.4),
+                color: const Color(0xFFF28C38).withValues(alpha: 0.4),
                 blurRadius: 20,
                 offset: const Offset(0, 8),
               ),

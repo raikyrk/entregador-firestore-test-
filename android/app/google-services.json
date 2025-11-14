@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "932043130642",
+    "project_id": "ao-gosto-app-c0b31",
+    "storage_bucket": "ao-gosto-app-c0b31.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:932043130642:android:b1c7706e4a4c8363e955cb",
+        "android_client_info": {
+          "package_name": "com.aogosto.temp_project"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDkXcfafUxaCIyqgminaGO4ZvPpPcIB7fw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:932043130642:android:45331efb6e4ae7a3e955cb",
+        "android_client_info": {
+          "package_name": "com.example.aogosto"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDkXcfafUxaCIyqgminaGO4ZvPpPcIB7fw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

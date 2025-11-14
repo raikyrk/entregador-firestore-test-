@@ -1,4 +1,4 @@
-// dashboard_screen.dart
+// dashboard_screen.dart - CORRIGIDO COM LOGS DETALHADOS
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,6 +11,7 @@ import 'login_screen.dart';
 import 'scanner_screen.dart';
 import 'deliveries_screen.dart';
 import 'dart:io';
+import 'constants/delivery_status.dart'; // IMPORTANTE: Use os mesmos status
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -18,11 +19,12 @@ class DashboardScreen extends StatefulWidget {
   DashboardScreenState createState() => DashboardScreenState();
 }
 
-class DashboardScreenState extends State<DashboardScreen> with SingleTickerProviderStateMixin {
+class DashboardScreenState extends State<DashboardScreen>
+    with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
-  // Cache para dados
+  // Cache
   String? _cachedEntregadorName;
   Map<String, dynamic>? _cachedDeliveries;
   Map<String, String>? _cachedAverageTime;
@@ -49,10 +51,12 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
   }
 
   Future<void> _loadCachedData() async {
-    _cachedEntregadorName = await _getEntregadorName();
-    _cachedDeliveries = await _getDailyDeliveries();
-    _cachedAverageTime = await _getAverageDeliveryTime();
+    print('DASHBOARD: Iniciando carregamento de dados...');
+    await _getEntregadorName();
+    await _getDailyDeliveries();
+    await _getAverageDeliveryTime();
     if (mounted) setState(() {});
+    print('DASHBOARD: Dados carregados e UI atualizada.');
   }
 
   Future<void> _writeLog(String message) async {
@@ -61,8 +65,9 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
       final file = File('${directory.path}/entregador.log');
       final timestamp = DateTime.now().toIso8601String();
       await file.writeAsString('$timestamp: $message\n', mode: FileMode.append);
+      print('LOG: $message'); // LOG NO CONSOLE
     } catch (e) {
-      debugPrint('Erro ao escrever log: $e');
+      print('ERRO AO ESCREVER LOG: $e');
     }
   }
 
@@ -81,13 +86,10 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
   Future<void> _refreshDashboard() async {
     if (_isRefreshing) return;
     setState(() => _isRefreshing = true);
-
-    await _writeLog('Atualização do painel iniciada');
+    await _writeLog('Atualização manual do dashboard iniciada');
     await _loadCachedData();
-
     if (!mounted) return;
     setState(() => _isRefreshing = false);
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Row(
@@ -105,69 +107,108 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
     );
   }
 
+  // === NOME DO ENTREGADOR ===
   Future<String> _getEntregadorName() async {
-    if (_cachedEntregadorName != null) return _cachedEntregadorName!;
+    if (_cachedEntregadorName != null) {
+      print('DASHBOARD: Nome do entregador (cache): $_cachedEntregadorName');
+      return _cachedEntregadorName!;
+    }
     final prefs = await SharedPreferences.getInstance();
     final name = prefs.getString('entregador') ?? 'Entregador';
+    _cachedEntregadorName = name;
+    print('DASHBOARD: Nome do entregador carregado: $name');
     await _writeLog('Nome do entregador obtido: $name');
     return name;
   }
 
-  // === CONTAGEM DE ENTREGAS NO FIRESTORE ===
+  // === ENTREGAS DO DIA (COM FILTRO POR DATA) ===
   Future<Map<String, dynamic>> _getDailyDeliveries() async {
+    print('DASHBOARD: Buscando entregas do dia...');
     try {
       final prefs = await SharedPreferences.getInstance();
       final entregador = prefs.getString('entregador') ?? '';
       if (entregador.isEmpty) {
+        print('DASHBOARD: ERRO - Entregador não encontrado no SharedPreferences');
         return {'completed': 0, 'pending': 0, 'total': 0};
       }
 
       final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      print('DASHBOARD: Data de hoje: $today | Entregador: $entregador');
 
-      // Busca entregas pendentes (status: "pendente" ou "em andamento")
+      // === PENDENTES: atribuídas hoje ===
       final pendingSnapshot = await FirebaseFirestore.instance
           .collection('pedidos')
           .where('entregador', isEqualTo: entregador)
-          .where('status', whereIn: ['pendente', 'em andamento'])
+          .where('status', whereIn: [
+            DeliveryStatus.pendente,
+            DeliveryStatus.emAndamento,
+            DeliveryStatus.saiuParaEntrega,
+          ])
           .get();
 
-      // Busca entregas concluídas (status: "concluido" e data_conclusao hoje)
+      print('DASHBOARD: Total de documentos pendentes (sem filtro): ${pendingSnapshot.docs.length}');
+
+      final pendingCount = pendingSnapshot.docs.where((doc) {
+        final ts = doc['timestamp_atribuicao'] as Timestamp?;
+        if (ts == null) {
+          print('DASHBOARD: Pedido ${doc.id} sem timestamp_atribuicao');
+          return false;
+        }
+        final date = DateFormat('yyyy-MM-dd').format(ts.toDate());
+        final match = date == today;
+        if (match) {
+          print('DASHBOARD: Pedido PENDENTE ${doc.id} atribuído hoje: $date');
+        }
+        return match;
+      }).length;
+
+      // === CONCLUÍDAS: concluídas hoje ===
       final completedSnapshot = await FirebaseFirestore.instance
           .collection('pedidos')
           .where('entregador', isEqualTo: entregador)
-          .where('status', isEqualTo: 'concluido')
+          .where('status', isEqualTo: DeliveryStatus.concluido)
           .get();
 
-      final pendingCount = pendingSnapshot.docs.length;
-      final completedCount = completedSnapshot.docs
-          .where((doc) {
-            final data = doc.data();
-            final concluido = data['data_conclusao'] as Timestamp?;
-            if (concluido == null) return false;
-            final date = DateFormat('yyyy-MM-dd').format(concluido.toDate());
-            return date == today;
-          })
-          .length;
+      print('DASHBOARD: Total de documentos concluídos (sem filtro): ${completedSnapshot.docs.length}');
 
-      return {
+      final completedCount = completedSnapshot.docs.where((doc) {
+        final ts = doc['data_conclusao'] as Timestamp?;
+        if (ts == null) {
+          print('DASHBOARD: Pedido ${doc.id} concluído, mas sem data_conclusao');
+          return false;
+        }
+        final date = DateFormat('yyyy-MM-dd').format(ts.toDate());
+        final match = date == today;
+        if (match) {
+          print('DASHBOARD: Pedido CONCLUÍDO ${doc.id} finalizado hoje: $date');
+        }
+        return match;
+      }).length;
+
+      final result = {
         'completed': completedCount,
         'pending': pendingCount,
         'total': pendingCount + completedCount,
       };
-    } catch (e) {
-      debugPrint('Erro ao buscar entregas: $e');
+
+      print('DASHBOARD: RESULTADO FINAL → Pendentes: $pendingCount | Concluídas: $completedCount | Total: ${result['total']}');
+      _cachedDeliveries = result;
+      await _writeLog('Entregas do dia: $result');
+      return result;
+    } catch (e, stack) {
+      print('DASHBOARD: ERRO CRÍTICO ao buscar entregas: $e');
+      print(stack);
       return {'completed': 0, 'pending': 0, 'total': 0};
     }
   }
 
-  // === TEMPO MÉDIO DE ENTREGA ===
+  // === TEMPO MÉDIO ===
   Future<Map<String, String>> _getAverageDeliveryTime() async {
+    print('DASHBOARD: Calculando tempo médio...');
     try {
       final prefs = await SharedPreferences.getInstance();
       final entregador = prefs.getString('entregador') ?? '';
-      if (entregador.isEmpty) {
-        return {'averageTime': '0 min', 'difference': '0 min'};
-      }
+      if (entregador.isEmpty) return {'averageTime': '0 min', 'difference': '0 min'};
 
       final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
       final yesterday = DateFormat('yyyy-MM-dd').format(DateTime.now().subtract(const Duration(days: 1)));
@@ -179,58 +220,47 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
         final snapshot = await FirebaseFirestore.instance
             .collection('pedidos')
             .where('entregador', isEqualTo: entregador)
-            .where('status', isEqualTo: 'concluido')
+            .where('status', isEqualTo: DeliveryStatus.concluido)
             .get();
 
         final deliveries = snapshot.docs.where((doc) {
-          final data = doc.data();
-          final concluido = data['data_conclusao'] as Timestamp?;
-          if (concluido == null) return false;
-          final concluidoDate = concluido.toDate();
-          return concluidoDate.isAfter(start) && concluidoDate.isBefore(end);
+          final ts = doc['data_conclusao'] as Timestamp?;
+          if (ts == null) return false;
+          final date = ts.toDate();
+          return date.isAfter(start) && date.isBefore(end);
         }).toList();
 
         if (deliveries.isEmpty) return 0.0;
 
-        double totalMinutes = 0.0;
-        for (var doc in deliveries) {
-          final data = doc.data();
-          totalMinutes += (data['duracao_minutos']?.toDouble() ?? 0.0);
+        double total = 0.0;
+        for (var d in deliveries) {
+          total += (d['duracao_minutos']?.toDouble() ?? 0.0);
         }
-
-        return totalMinutes / deliveries.length;
+        return total / deliveries.length;
       }
 
-      final results = await Future.wait([
+      final [todayAvg, yesterdayAvg] = await Future.wait([
         calculateAverageForDate(today),
         calculateAverageForDate(yesterday),
       ]);
 
-      final todayAverage = results[0];
-      final yesterdayAverage = results[1];
+      final avgStr = todayAvg >= 60
+          ? '${(todayAvg / 60).floor()}h ${(todayAvg % 60).round()}m'
+          : '${todayAvg.round()} min';
 
-      String averageTime;
-      if (todayAverage >= 60) {
-        final hours = (todayAverage / 60).floor();
-        final minutes = (todayAverage % 60).round();
-        averageTime = '${hours}h ${minutes}m';
-      } else {
-        averageTime = '${todayAverage.round()} min';
-      }
+      final diff = todayAvg - yesterdayAvg;
+      final diffStr = diff == 0
+          ? '0 min'
+          : diff >= 60
+              ? '${diff > 0 ? '+' : '-'}${(diff.abs() / 60).floor()}h ${(diff.abs() % 60).round()}m'
+              : '${diff > 0 ? '+' : '-'}${diff.abs().round()} min';
 
-      String difference;
-      final diffMinutes = todayAverage - yesterdayAverage;
-      if (diffMinutes.abs() >= 60) {
-        final hours = (diffMinutes.abs() / 60).floor();
-        final minutes = (diffMinutes.abs() % 60).round();
-        difference = '${diffMinutes >= 0 ? '+' : '-'}${hours}h ${minutes}m';
-      } else {
-        difference = diffMinutes == 0 ? '0 min' : '${diffMinutes >= 0 ? '+' : '-'}${diffMinutes.abs().round()} min';
-      }
-
-      return {'averageTime': averageTime, 'difference': difference};
+      final result = {'averageTime': avgStr, 'difference': diffStr};
+      print('DASHBOARD: Tempo médio → Hoje: $avgStr | Diferença: $diffStr');
+      _cachedAverageTime = result;
+      return result;
     } catch (e) {
-      debugPrint('Erro ao calcular tempo médio: $e');
+      print('DASHBOARD: Erro no tempo médio: $e');
       return {'averageTime': '0 min', 'difference': '0 min'};
     }
   }
@@ -326,33 +356,14 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Olá,',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF6B7280),
-                    fontFamily: 'Poppins',
-                  ),
-                ),
+                const Text('Olá,', style: TextStyle(fontSize: 14, color: Color(0xFF6B7280))),
                 const SizedBox(height: 4),
                 Text(
                   _cachedEntregadorName ?? 'Entregador',
-                  style: const TextStyle(
-                    fontSize: 24,
-                    color: Color(0xFFF28C38),
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'Poppins',
-                  ),
+                  style: const TextStyle(fontSize: 24, color: Color(0xFFF28C38), fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 4),
-                const Text(
-                  'Bom trabalho hoje!',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF6B7280),
-                    fontFamily: 'Poppins',
-                  ),
-                ),
+                const Text('Bom trabalho hoje!', style: TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
               ],
             ),
           ),
@@ -367,28 +378,12 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFF28C38), Color(0xFFF5A623)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
+                      gradient: const LinearGradient(colors: [Color(0xFFF28C38), Color(0xFFF5A623)]),
                       borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFFF28C38).withOpacity(0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
+                      boxShadow: [BoxShadow(color: const Color(0xFFF28C38).withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))],
                     ),
                     child: _isRefreshing
-                        ? const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          )
+                        ? const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)))
                         : const Icon(Icons.refresh_rounded, color: Colors.white, size: 24),
                   ),
                 ),
@@ -418,31 +413,28 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
         onTap: () async {
           await _writeLog('Botão Escanear QR Code pressionado');
           if (!Platform.isAndroid && !Platform.isIOS) {
-            if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Escaneamento de QR Code não disponível nesta plataforma.')),
+              const SnackBar(content: Text('Escaneamento não disponível nesta plataforma.')),
             );
-          } else {
-            if (!mounted) return;
-            Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen()));
+            return;
+          }
+
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const ScannerScreen()),
+          );
+
+          if (result == true || result == 'refresh') {
+            print('DASHBOARD: Scanner retornou sucesso → Atualizando dashboard');
+            await _refreshDashboard();
           }
         },
         borderRadius: BorderRadius.circular(16),
         child: Container(
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFF28C38), Color(0xFFF5A623)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            gradient: const LinearGradient(colors: [Color(0xFFF28C38), Color(0xFFF5A623)]),
             borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFF28C38).withOpacity(0.3),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
+            boxShadow: [BoxShadow(color: const Color(0xFFF28C38).withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 8))],
           ),
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -469,46 +461,19 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
                 },
               ),
               const SizedBox(height: 20),
-              const Text(
-                'Escanear QR Code',
-                style: TextStyle(
-                  fontSize: 24,
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'Poppins',
-                ),
-              ),
+              const Text('Escanear QR Code', style: TextStyle(fontSize: 24, color: Colors.white, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              const Text(
-                'Toque para iniciar uma nova entrega',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.white,
-                  fontFamily: 'Poppins',
-                ),
-                textAlign: TextAlign.center,
-              ),
+              const Text('Toque para iniciar uma nova entrega', style: TextStyle(fontSize: 14, color: Colors.white), textAlign: TextAlign.center),
               const SizedBox(height: 20),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                ),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.touch_app_rounded, color: Color(0xFFF28C38), size: 20),
                     SizedBox(width: 8),
-                    Text(
-                      'Toque aqui',
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: Color(0xFFF28C38),
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'Poppins',
-                      ),
-                    ),
+                    Text('Toque aqui', style: TextStyle(fontSize: 15, color: Color(0xFFF28C38), fontWeight: FontWeight.w600)),
                   ],
                 ),
               ),
@@ -520,18 +485,13 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
   }
 
   Widget _buildStatsCards() {
+    final total = _cachedDeliveries?['total'] ?? 0;
+    final completed = _cachedDeliveries?['completed'] ?? 0;
+
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [
+        BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))
+      ]),
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -539,32 +499,15 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Suas Entregas',
-                style: TextStyle(
-                  fontSize: 20,
-                  color: Color(0xFF374151),
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'Poppins',
-                ),
-              ),
+              const Text('Suas Entregas', style: TextStyle(fontSize: 20, color: Color(0xFF374151), fontWeight: FontWeight.bold)),
               TextButton.icon(
                 onPressed: () async {
                   await _writeLog('Botão Ver Entregas pressionado');
-                  if (!mounted) return;
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const DeliveriesScreen()),
-                  );
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const DeliveriesScreen()));
                 },
                 icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-                label: const Text(
-                  'Ver todas',
-                  style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w500),
-                ),
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFFF28C38),
-                ),
+                label: const Text('Ver todas'),
+                style: TextButton.styleFrom(foregroundColor: const Color(0xFFF28C38)),
               ),
             ],
           ),
@@ -574,38 +517,24 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
               Expanded(
                 child: _buildStatCard(
                   title: 'Total hoje',
-                  value: '${_cachedDeliveries?['total'] ?? 0}',
+                  value: '$total',
                   icon: Icons.inventory_2_rounded,
                   backgroundColor: const Color(0xFFFFF5E6),
                   iconColor: const Color(0xFFF28C38),
                   valueColor: const Color(0xFFF28C38),
-                  onTap: () async {
-                    await _writeLog('Card Entregas Hoje clicado');
-                    if (!mounted) return;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const DeliveriesScreen(initialTabIndex: 0)),
-                    );
-                  },
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DeliveriesScreen(initialTabIndex: 0))),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: _buildStatCard(
                   title: 'Concluídas',
-                  value: '${_cachedDeliveries?['completed'] ?? 0}',
+                  value: '$completed',
                   icon: Icons.check_circle_rounded,
                   backgroundColor: const Color(0xFFE7F6E9),
                   iconColor: const Color(0xFF16A34A),
                   valueColor: const Color(0xFF16A34A),
-                  onTap: () async {
-                    await _writeLog('Card Entregas Concluídas clicado');
-                    if (!mounted) return;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const DeliveriesScreen(initialTabIndex: 1)),
-                    );
-                  },
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DeliveriesScreen(initialTabIndex: 1))),
                 ),
               ),
             ],
@@ -630,10 +559,7 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(12),
-          ),
+          decoration: BoxDecoration(color: backgroundColor, borderRadius: BorderRadius.circular(12)),
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -643,33 +569,15 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
                 children: [
                   Container(
                     padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
                     child: Icon(icon, color: iconColor, size: 22),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 28,
-                  color: valueColor,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'Poppins',
-                ),
-              ),
+              Text(value, style: TextStyle(fontSize: 28, color: valueColor, fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF6B7280),
-                  fontFamily: 'Poppins',
-                ),
-              ),
+              Text(title, style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
             ],
           ),
         ),
@@ -690,19 +598,9 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
 
     return Container(
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFF28C38), Color(0xFFF5A623)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        gradient: const LinearGradient(colors: [Color(0xFFF28C38), Color(0xFFF5A623)]),
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFF28C38).withOpacity(0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: const Color(0xFFF28C38).withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 8))],
       ),
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -714,91 +612,38 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
               const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Tempo Médio',
-                    style: TextStyle(
-                      fontSize: 20,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontFamily: 'Poppins',
-                    ),
-                  ),
+                  Text('Tempo Médio', style: TextStyle(fontSize: 20, color: Colors.white, fontWeight: FontWeight.bold)),
                   SizedBox(height: 4),
-                  Text(
-                    'Por entrega hoje',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.white70,
-                      fontFamily: 'Poppins',
-                    ),
-                  ),
+                  Text('Por entrega hoje', style: TextStyle(fontSize: 13, color: Colors.white70)),
                 ],
               ),
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
                 child: const Icon(Icons.timer_rounded, color: Colors.white, size: 28),
               ),
             ],
           ),
           const SizedBox(height: 24),
-          Text(
-            avgTime,
-            style: const TextStyle(
-              fontSize: 48,
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontFamily: 'Poppins',
-              height: 1,
-            ),
-          ),
+          Text(avgTime, style: const TextStyle(fontSize: 48, color: Colors.white, fontWeight: FontWeight.bold, height: 1)),
           const SizedBox(height: 24),
           Container(
-            decoration: BoxDecoration(
-              border: Border(
-                top: BorderSide(color: Colors.white.withOpacity(0.3), width: 1),
-              ),
-            ),
+            decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.white.withOpacity(0.3), width: 1))),
             padding: const EdgeInsets.only(top: 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
-                    Icon(
-                      isImprovement ? Icons.trending_down_rounded : Icons.trending_up_rounded,
-                      color: Colors.white70,
-                      size: 18,
-                    ),
+                    Icon(isImprovement ? Icons.trending_down_rounded : Icons.trending_up_rounded, color: Colors.white70, size: 18),
                     const SizedBox(width: 8),
-                    const Text(
-                      'vs. ontem',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.white70,
-                        fontFamily: 'Poppins',
-                      ),
-                    ),
+                    const Text('vs. ontem', style: TextStyle(fontSize: 14, color: Colors.white70)),
                   ],
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    difference,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: color,
-                      fontWeight: FontWeight.bold,
-                      fontFamily: 'Poppins',
-                    ),
-                  ),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+                  child: Text(difference, style: TextStyle(fontSize: 14, color: color, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),

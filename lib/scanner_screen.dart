@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'constants/delivery_status.dart'; // NOVO
 
 /// ---------------------------------------------------
 /// 1. Normaliza o nome do entregador
@@ -66,7 +67,12 @@ class DeliveryService {
 
       final data = doc.data()!;
       final status = data['status']?.toString() ?? '';
-      return status == 'em andamento' || status == 'concluido';
+      final entregador = data['entregador']?.toString() ?? '';
+
+      // Só considera duplicado se já tem entregador E status avançado
+      return entregador.isNotEmpty &&
+          entregador != '-' &&
+          [DeliveryStatus.saiuParaEntrega, DeliveryStatus.concluido].contains(status);
     } catch (e) {
       if (kDebugMode) debugPrint('checkDuplicate erro: $e');
       return false;
@@ -88,9 +94,13 @@ class DeliveryService {
 
       await docRef.update({
         'entregador': entregador,
-        'status': 'em andamento',
+        'status': DeliveryStatus.saiuParaEntrega,
         'timestamp_atribuicao': FieldValue.serverTimestamp(),
       });
+
+      if (kDebugMode) {
+        debugPrint('Pedido $id atribuído a $entregador');
+      }
 
       return {
         'success': true,
@@ -126,6 +136,7 @@ class DeliveryService {
       await http
           .post(Uri.parse(messageApiUrl), headers: headers, body: jsonEncode(payload))
           .timeout(const Duration(seconds: 10));
+      if (kDebugMode) debugPrint('SMS enviado para $phone');
     } catch (e) {
       if (kDebugMode) debugPrint("Erro ao enviar mensagem: $e");
     }

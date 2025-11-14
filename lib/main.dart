@@ -1,17 +1,13 @@
+// main.dart
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
-import 'package:intl/intl.dart';
-import 'package:syncfusion_flutter_datepicker/datepicker.dart';
-import 'package:html/parser.dart' as html_parser;
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'login_screen.dart';
 import 'dashboard_screen.dart';
 import 'scanner_screen.dart';
 import 'deliveries_screen.dart';
 
-// Widget personalizado para botões com animação de escala
 class AnimatedScaleButton extends StatefulWidget {
   final VoidCallback onPressed;
   final Widget child;
@@ -40,11 +36,11 @@ class _AnimatedScaleButtonState extends State<AnimatedScaleButton> {
         child: ElevatedButton(
           onPressed: widget.onPressed,
           style: ElevatedButton.styleFrom(
-            backgroundColor: Color(0xFFF28C38),
+            backgroundColor: const Color(0xFFF28C38),
             foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             elevation: 5,
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           ),
           child: widget.child,
         ),
@@ -55,7 +51,13 @@ class _AnimatedScaleButtonState extends State<AnimatedScaleButton> {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env"); // Carrega o arquivo .env
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  await dotenv.load(fileName: ".env");
+
   runApp(const MyApp());
 }
 
@@ -65,31 +67,35 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Ao Gosto Carnes',
+      title: 'Ao Gosto Carnes - Firestore',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.orange,
-        scaffoldBackgroundColor: Colors.grey[900],
-        textTheme: TextTheme(
-          bodyLarge: TextStyle(color: Colors.white),
-          bodyMedium: TextStyle(color: Colors.grey[200]),
+        scaffoldBackgroundColor: const Color(0xFFF5F5F5),
+        textTheme: const TextTheme(
+          bodyLarge: TextStyle(color: Colors.black87),
+          bodyMedium: TextStyle(color: Colors.black54),
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            backgroundColor: Color(0xFFF28C38),
+            backgroundColor: const Color(0xFFF28C38),
             foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             elevation: 5,
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           ),
         ),
-        cardTheme: CardThemeData(
-          color: Colors.grey[800],
+        cardTheme: CardThemeData(  // Removido 'const' aqui
+          color: Colors.white,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: BorderSide(color: Color(0x80F28C38), width: 1),
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: const Color(0xFFF28C38).withOpacity(0.1),
+              width: 1,
+            ),
           ),
-          elevation: 3,
-          margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+          elevation: 2,
+          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
         ),
       ),
       home: const LoginScreen(),

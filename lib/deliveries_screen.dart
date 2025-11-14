@@ -1,13 +1,12 @@
+// deliveries_screen.dart - PARTE 1 (CORRIGIDA COM FIRESTORE)
 import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
-import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:convert';
 import 'dart:async';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'main.dart';
@@ -37,7 +36,6 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
   late SharedPreferences _prefs;
   String? _errorMessage;
   late TabController _tabController;
-  final ImagePicker _picker = ImagePicker();
   Timer? _notificationTimer;
 
   static const Color primary = Color(0xFFF28C38);
@@ -77,8 +75,8 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
   Future<void> _checkPendingDeliveries() async {
     final now = DateTime.now();
     for (final delivery in _pendingDeliveries) {
-      final ts = DateTime.tryParse(delivery['timestamp'] ?? '');
-      if (ts != null && now.difference(ts).inHours >= 1) {
+      final ts = delivery['timestamp_atribuicao'] as Timestamp?;
+      if (ts != null && now.difference(ts.toDate()).inHours >= 1) {
         if (!mounted) return;
         showDialog(
           context: context,
@@ -87,10 +85,10 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
             icon: Icons.access_time_rounded,
             iconColor: primary,
             title: 'Lembrete de Conclusão',
-            message: 'O pedido #${delivery['id_pedido']} está pendente há mais de 1 hora. Deseja marcá-lo como concluído?',
+            message: 'O pedido #${delivery['id']} está pendente há mais de 1 hora. Deseja marcá-lo como concluído?',
             primaryAction: () {
               Navigator.pop(context);
-              _markAsCompleted(delivery['id_pedido'], delivery['timestamp'], delivery['telefone']);
+              _markAsCompleted(delivery['id']);
             },
             primaryLabel: 'Concluir',
             secondaryAction: () => Navigator.pop(context),
@@ -102,6 +100,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
     }
   }
 
+  // === BUSCA ENTREGAS NO FIRESTORE ===
   Future<void> _fetchDeliveries() async {
     if (!mounted) return;
     setState(() {
@@ -113,56 +112,55 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
 
     try {
       final entregador = _prefs.getString('entregador') ?? '';
-      final baseUrl = dotenv.env['API_BASE_URL'] ?? '';
-      final deliveriesEndpoint = dotenv.env['DELIVERIES_ENDPOINT'] ?? '';
-      final completedEndpoint = dotenv.env['COMPLETED_DELIVERIES_ENDPOINT'] ?? '';
+      if (entregador.isEmpty) throw Exception('Entregador não encontrado');
 
-      if (baseUrl.isEmpty || deliveriesEndpoint.isEmpty || completedEndpoint.isEmpty) {
-        throw Exception('Variáveis de ambiente não definidas');
+      final firestore = FirebaseFirestore.instance;
+
+      // Pendentes: status em andamento ou pendente
+      final pendingSnapshot = await firestore
+          .collection('pedidos')
+          .where('entregador', isEqualTo: entregador)
+          .where('status', whereIn: ['pendente', 'em andamento'])
+          .get();
+
+      // Concluídas: status concluído e data_conclusao nas datas selecionadas
+      final completedSnapshot = await firestore
+          .collection('pedidos')
+          .where('entregador', isEqualTo: entregador)
+          .where('status', isEqualTo: 'concluido')
+          .get();
+
+      final List<Map<String, dynamic>> pendentes = [];
+      final List<Map<String, dynamic>> concluidas = [];
+
+      // Processa pendentes
+      for (var doc in pendingSnapshot.docs) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        data['is_completed'] = false;
+        data['taxa_entrega'] = (data['pagamento']?['taxa_entrega'] ?? 0).toDouble();
+        pendentes.add(data);
       }
 
-      final pendingResp = await http.get(
-        Uri.parse('$baseUrl$deliveriesEndpoint&entregador=${Uri.encodeComponent(entregador)}'),
-      ).timeout(const Duration(seconds: 10));
+      // Processa concluídas
+      for (var doc in completedSnapshot.docs) {
+        final data = doc.data();
+        final concluido = data['data_conclusao'] as Timestamp?;
+        if (concluido == null) continue;
 
-      if (pendingResp.statusCode != 200) {
-        throw Exception('Erro ao buscar pendentes: ${pendingResp.statusCode}');
-      }
-
-      final pendingJson = jsonDecode(pendingResp.body);
-      if (pendingJson['status'] != 'success') {
-        throw Exception('Pendentes: ${pendingJson['message']}');
-      }
-
-      final List<Map<String, dynamic>> pendentes = List.from(pendingJson['deliveries']);
-      for (final d in pendentes) {
-        d['is_completed'] = false;
-        d['taxa_entrega'] = double.parse(d['taxa_entrega'].toString());
-        _pendingDeliveries.add(d);
-      }
-
-      for (final date in _selectedDates) {
-        final fmt = DateFormat('yyyy-MM-dd').format(date);
-        final compResp = await http.get(
-          Uri.parse('$baseUrl$completedEndpoint&entregador=${Uri.encodeComponent(entregador)}&date=$fmt'),
-        ).timeout(const Duration(seconds: 10));
-
-        if (compResp.statusCode != 200) {
-          throw Exception('Erro ao buscar concluídas: ${compResp.statusCode}');
+        final dateStr = DateFormat('yyyy-MM-dd').format(concluido.toDate());
+        if (!_selectedDates.any((d) => DateFormat('yyyy-MM-dd').format(d) == dateStr)) {
+          continue;
         }
 
-        final compJson = jsonDecode(compResp.body);
-        if (compJson['status'] != 'success') {
-          throw Exception('Concluídas: ${compJson['message']}');
-        }
-
-        final List<Map<String, dynamic>> concluidas = List.from(compJson['deliveries']);
-        for (final d in concluidas) {
-          d['is_completed'] = true;
-          d['taxa_entrega'] = double.parse(d['taxa_entrega'].toString());
-          _completedDeliveries.add(d);
-        }
+        data['id'] = doc.id;
+        data['is_completed'] = true;
+        data['taxa_entrega'] = (data['pagamento']?['taxa_entrega'] ?? 0).toDouble();
+        concluidas.add(data);
       }
+
+      _pendingDeliveries = pendentes;
+      _completedDeliveries = concluidas;
 
       if (!mounted) return;
       setState(() => _isLoading = false);
@@ -176,84 +174,39 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
     }
   }
 
-  Future<void> enviarMensagemConcluido(String? phoneNumber) async {
-    if (phoneNumber == null || phoneNumber == 'N/A' || phoneNumber.trim().isEmpty) {
-      developer.log('Telefone inválido');
-      return;
-    }
-
-    const mensagem = "Parece que o seu pedido foi concluído com sucesso! \n\nEspero que goste de nossos produtos";
-
-    final phone = phoneNumber.replaceAll(RegExp(r'\D'), '');
-    if (phone.isEmpty) return;
-
-    final messageApiUrl = dotenv.env['MESSAGE_API_URL'];
-    final messageApiToken = dotenv.env['MESSAGE_API_TOKEN'];
-
-    if (messageApiUrl == null || messageApiUrl.isEmpty ||
-        messageApiToken == null || messageApiToken.isEmpty) {
-      developer.log('MESSAGE_API_URL ou MESSAGE_API_TOKEN não definidos');
-      return;
-    }
-
-    final payload = {
-      "number": phone,
-      "text": mensagem
-    };
-
-    final headers = {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "token": messageApiToken,
-    };
-
-    try {
-      final response = await http.post(
-        Uri.parse(messageApiUrl),
-        headers: headers,
-        body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 10));
-
-      if (kDebugMode) {
-        developer.log('Mensagem concluída enviada: ${response.statusCode}');
-        developer.log('Response: ${response.body}');
-      }
-    } catch (e) {
-      developer.log('Erro ao enviar mensagem concluída: $e');
-    }
-  }
-
-  Future<void> _markAsCompleted(String id, String timestamp, String? telefone) async {
+  // === MARCA COMO CONCLUÍDO ===
+  Future<void> _markAsCompleted(String id) async {
     final entregador = _prefs.getString('entregador') ?? '';
     setState(() => _isLoading = true);
+
     try {
-      final baseUrl = dotenv.env['API_BASE_URL'] ?? '';
-      final endpoint = dotenv.env['MARK_COMPLETED_ENDPOINT'] ?? '';
-      if (baseUrl.isEmpty || endpoint.isEmpty) throw Exception('Endpoints ausentes');
+      final docRef = FirebaseFirestore.instance.collection('pedidos').doc(id);
+      final doc = await docRef.get();
+      if (!doc.exists) throw Exception('Pedido não encontrado');
 
-      final resp = await http.post(
-        Uri.parse('$baseUrl$endpoint'),
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: {
-          'id_pedido': id,
-          'nome_entregador': entregador,
-          'timestamp': timestamp,
-          'timestamp_concluido': DateTime.now().toIso8601String(),
-        },
-      ).timeout(const Duration(seconds: 10));
+      final data = doc.data()!;
+      final atribuicao = data['timestamp_atribuicao'] as Timestamp?;
+      if (atribuicao == null) throw Exception('Timestamp de atribuição ausente');
 
-      if (resp.statusCode != 200) throw Exception('Status ${resp.statusCode}');
-      final data = jsonDecode(resp.body);
-      if (data['status'] != 'success') throw Exception(data['message']);
+      final now = DateTime.now();
+      final duracao = now.difference(atribuicao.toDate());
+      final duracaoMinutos = duracao.inMinutes.toDouble();
 
-      await enviarMensagemConcluido(telefone);
+      await docRef.update({
+        'status': 'concluido',
+        'data_conclusao': FieldValue.serverTimestamp(),
+        'duracao_minutos': duracaoMinutos,
+      });
+
+      await enviarMensagemConcluido(data['cliente']?['telefone']);
       await _fetchDeliveries();
+
       if (!mounted) return;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Row(
-            children: const [
+          content: const Row(
+            children: [
               Icon(Icons.check_circle, color: Colors.white),
               SizedBox(width: 12),
               Text('Entrega concluída com sucesso!'),
@@ -284,81 +237,81 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
     }
   }
 
-  Future<void> _deleteDelivery(String id, String timestamp, bool isCompleted) async {
-  final entregador = _prefs.getString('entregador') ?? '';
-  final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-  setState(() => _isLoading = true);
+  // === EXCLUI ENTREGA ===
+  Future<void> _deleteDelivery(String id, bool isCompleted) async {
+    setState(() => _isLoading = true);
 
-  try {
-    final baseUrl = dotenv.env['API_BASE_URL'] ?? '';
-    final deletePend = dotenv.env['DELETE_DELIVERY_ENDPOINT'] ?? '';
-    final deleteComp = dotenv.env['DELETE_COMPLETED_DELIVERY_ENDPOINT'] ?? '';
+    try {
+      final docRef = FirebaseFirestore.instance.collection('pedidos').doc(id);
+      await docRef.update({'status': 'excluido'});
 
-    if (baseUrl.isEmpty || deletePend.isEmpty || deleteComp.isEmpty) {
-      throw Exception('Endpoints de exclusão ausentes');
-    }
+      await _fetchDeliveries();
+      if (!mounted) return;
 
-    // REMOVIDO: chamada à planilha (agora feita no PHP)
-    // if (!isCompleted) { ... }
-
-    final apiUrl = isCompleted ? '$baseUrl$deleteComp' : '$baseUrl$deletePend';
-    final dbResp = await http.post(
-      Uri.parse(apiUrl),
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: {
-        'id_pedido': id,
-        'nome_entregador': entregador,
-        'timestamp': timestamp,
-      },
-    ).timeout(const Duration(seconds: 30)); // Aumentar para 30s
-
-    if (dbResp.statusCode != 200) {
-      throw Exception('Erro no servidor: ${dbResp.statusCode}');
-    }
-
-    final dbData = jsonDecode(dbResp.body);
-    if (dbData['status'] != 'success') {
-      throw Exception(dbData['message'] ?? 'Erro desconhecido');
-    }
-
-    await _fetchDeliveries();
-    if (!mounted) return;
-
-    setState(() => _isLoading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Row(
-          children: [
-            Icon(Icons.delete_sweep, color: Colors.white),
-            SizedBox(width: 12),
-            Text('Entrega excluída com sucesso!'),
-          ],
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.delete_sweep, color: Colors.white),
+              SizedBox(width: 12),
+              Text('Entrega excluída com sucesso!'),
+            ],
+          ),
+          backgroundColor: danger,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
-        backgroundColor: danger,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  } catch (e) {
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.error, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(child: Text('Erro ao excluir: $e')),
-          ],
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Erro ao excluir: $e')),
+            ],
+          ),
+          backgroundColor: danger,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
-        backgroundColor: danger,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
+      );
+    }
   }
-}
 
+  // === ENVIA SMS DE CONCLUSÃO ===
+  Future<void> enviarMensagemConcluido(String? phoneNumber) async {
+    if (phoneNumber == null || phoneNumber == 'N/A' || phoneNumber.trim().isEmpty) return;
+
+    const mensagem = "Parece que o seu pedido foi concluído com sucesso! \n\nEspero que goste de nossos produtos";
+    final phone = phoneNumber.replaceAll(RegExp(r'\D'), '');
+    if (phone.isEmpty) return;
+
+    final messageApiUrl = dotenv.env['MESSAGE_API_URL'];
+    final messageApiToken = dotenv.env['MESSAGE_API_TOKEN'];
+    if (messageApiUrl == null || messageApiUrl.isEmpty || messageApiToken == null || messageApiToken.isEmpty) return;
+
+    final payload = {"number": phone, "text": mensagem};
+    final headers = {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "token": messageApiToken,
+    };
+
+    try {
+      await http
+          .post(Uri.parse(messageApiUrl), headers: headers, body: jsonEncode(payload))
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      developer.log('Erro ao enviar mensagem concluída: $e');
+    }
+  }
+
+  // === FILTRO DE DATA ===
   Future<void> _selectDate(BuildContext context) async {
     final picked = await showDateRangePicker(
       context: context,
@@ -401,6 +354,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
     }
   }
 
+  // === DETALHES DO PEDIDO ===
   void _showDeliveryDetails(BuildContext context, Map<String, dynamic> delivery) {
     showModalBottomSheet(
       context: context,
@@ -411,14 +365,11 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Handle bar
               Container(
                 margin: const EdgeInsets.only(top: 12, bottom: 8),
                 width: 40,
@@ -428,8 +379,6 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              
-              // Header
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
                 child: Row(
@@ -450,7 +399,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Pedido #${delivery['id_pedido']}',
+                            'Pedido #${delivery['id']}',
                             style: const TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
@@ -458,11 +407,9 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                             ),
                           ),
                           Text(
-                            DateFormat('dd/MM/yyyy às HH:mm').format(DateTime.parse(delivery['timestamp'])),
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[600],
-                            ),
+                            DateFormat('dd/MM/yyyy às HH:mm').format(
+                                (delivery['timestamp_atribuicao'] as Timestamp).toDate()),
+                            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                           ),
                         ],
                       ),
@@ -470,10 +417,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                   ],
                 ),
               ),
-
               const Divider(height: 1),
-
-              // Content
               Padding(
                 padding: const EdgeInsets.all(24),
                 child: Column(
@@ -483,9 +427,9 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                       icon: Icons.location_on_outlined,
                       iconColor: danger,
                       title: 'Endereço de Entrega',
-                      content: '${delivery['rua'] ?? 'N/A'}, ${delivery['numero'] ?? 'S/N'}\n${delivery['bairro'] ?? 'N/A'}\n${delivery['cidade'] ?? 'N/A'} - ${delivery['estado'] ?? ''}',
+                      content:
+                          '${delivery['rua'] ?? 'N/A'}, ${delivery['numero'] ?? 'S/N'}\n${delivery['bairro'] ?? 'N/A'}\n${delivery['cidade'] ?? 'N/A'} - ${delivery['estado'] ?? ''}',
                     ),
-                    
                     if (delivery['cep'] != null && delivery['cep'].toString().trim().isNotEmpty)
                       _buildDetailSection(
                         icon: Icons.pin_drop_outlined,
@@ -493,17 +437,13 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                         title: 'CEP',
                         content: delivery['cep'],
                       ),
-                    
                     _buildDetailSection(
                       icon: Icons.phone_outlined,
                       iconColor: success,
                       title: 'Contato',
-                      content: delivery['telefone'] ?? 'N/A',
+                      content: delivery['cliente']?['telefone'] ?? 'N/A',
                     ),
-
                     const SizedBox(height: 24),
-
-                    // Actions
                     Row(
                       children: [
                         Expanded(
@@ -514,14 +454,14 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                             color: info,
                           ),
                         ),
-                        if (delivery['telefone'] != null && 
-                            delivery['telefone'] != 'N/A' && 
-                            delivery['telefone'].toString().trim().isNotEmpty) ...[
+                        if (delivery['cliente']?['telefone'] != null &&
+                            delivery['cliente']['telefone'] != 'N/A' &&
+                            delivery['cliente']['telefone'].toString().trim().isNotEmpty) ...[
                           const SizedBox(width: 12),
                           Expanded(
                             child: _buildActionButton(
                               onPressed: () async {
-                                final phone = delivery['telefone'].toString().replaceAll(RegExp(r'\D'), '');
+                                final phone = delivery['cliente']['telefone'].toString().replaceAll(RegExp(r'\D'), '');
                                 final formatted = phone.startsWith('55') ? phone : '55$phone';
                                 final uri = Uri.parse('tel:+$formatted');
                                 if (await canLaunchUrl(uri)) {
@@ -588,11 +528,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                 const SizedBox(height: 6),
                 Text(
                   content,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    color: dark,
-                    height: 1.4,
-                  ),
+                  style: const TextStyle(fontSize: 15, color: dark, height: 1.4),
                 ),
               ],
             ),
@@ -616,9 +552,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
         backgroundColor: color,
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(vertical: 14),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         elevation: 0,
       ),
     );
@@ -641,37 +575,13 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
               margin: const EdgeInsets.only(bottom: 20),
               width: 40,
               height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
+              decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
             ),
-            const Text(
-              'Escolha o aplicativo',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: dark,
-              ),
-            ),
+            const Text('Escolha o aplicativo', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: dark)),
             const SizedBox(height: 24),
-            _buildMapOptionCard(
-              context,
-              delivery,
-              'Google Maps',
-              Icons.map,
-              const Color(0xFF4285F4),
-              () => _openGoogleMaps(delivery),
-            ),
+            _buildMapOptionCard(context, delivery, 'Google Maps', Icons.map, const Color(0xFF4285F4), () => _openGoogleMaps(delivery)),
             const SizedBox(height: 12),
-            _buildMapOptionCard(
-              context,
-              delivery,
-              'Waze',
-              Icons.navigation,
-              const Color(0xFF33CCFF),
-              () => _openWaze(delivery),
-            ),
+            _buildMapOptionCard(context, delivery, 'Waze', Icons.navigation, const Color(0xFF33CCFF), () => _openWaze(delivery)),
             const SizedBox(height: 12),
           ],
         ),
@@ -692,19 +602,13 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
       borderRadius: BorderRadius.circular(16),
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey[200]!),
-          borderRadius: BorderRadius.circular(16),
-        ),
+        decoration: BoxDecoration(border: Border.all(color: Colors.grey[200]!), borderRadius: BorderRadius.circular(16)),
         child: Row(
           children: [
             Container(
               width: 48,
               height: 48,
-              decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
+              decoration: BoxDecoration(color: iconColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
               child: Icon(icon, color: iconColor, size: 24),
             ),
             const SizedBox(width: 16),
@@ -712,21 +616,8 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                      color: dark,
-                    ),
-                  ),
-                  Text(
-                    'Abrir navegação',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[600],
-                    ),
-                  ),
+                  Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: dark)),
+                  Text('Abrir navegação', style: TextStyle(fontSize: 13, color: Colors.grey[600])),
                 ],
               ),
             ),
@@ -740,11 +631,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
   Future<void> _openGoogleMaps(Map<String, dynamic> d) async {
     final addr = _buildAddressString(d);
     if (addr.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Endereço incompleto')),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Endereço incompleto')));
       return;
     }
     final enc = Uri.encodeComponent(addr);
@@ -761,11 +648,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
   Future<void> _openWaze(Map<String, dynamic> d) async {
     final addr = _buildAddressString(d);
     if (addr.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Endereço incompleto')),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Endereço incompleto')));
       return;
     }
     final enc = Uri.encodeComponent(addr);
@@ -790,6 +673,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
     return '$rua $num, $bairro, $cidade - $estado, $cep, Brasil';
   }
 
+// PARTE 2 - CORRIGIDA COM FIRESTORE
   Widget _buildModernDialog({
     required IconData icon,
     required Color iconColor,
@@ -1250,8 +1134,8 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
               if (result == true) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Row(
-                      children: const [
+                    content: const Row(
+                      children: [
                         Icon(Icons.check_circle, color: Colors.white),
                         SizedBox(width: 12),
                         Text('Pedido escaneado com sucesso!'),
@@ -1259,9 +1143,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                     ),
                     backgroundColor: success,
                     behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 );
                 _fetchDeliveries();
@@ -1477,7 +1359,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                               ],
                             ),
                             child: Text(
-                              '#${d['id_pedido']}',
+                              '#${d['id']}',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 14,
@@ -1600,7 +1482,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                               message: 'Deseja marcar esta entrega como concluída?',
                               primaryAction: () {
                                 Navigator.pop(ctx);
-                                _markAsCompleted(d['id_pedido'], d['timestamp'], d['telefone']);
+                                _markAsCompleted(d['id']);
                               },
                               primaryLabel: 'Confirmar',
                               secondaryAction: () => Navigator.pop(ctx),
@@ -1622,7 +1504,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                               message: 'Tem certeza que deseja excluir esta entrega?',
                               primaryAction: () {
                                 Navigator.pop(ctx);
-                                _deleteDelivery(d['id_pedido'], d['timestamp'], completed);
+                                _deleteDelivery(d['id'], completed);
                               },
                               primaryLabel: 'Excluir',
                               secondaryAction: () => Navigator.pop(ctx),

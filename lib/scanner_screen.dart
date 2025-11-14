@@ -1,25 +1,23 @@
-// lib/scanner_screen.dart
-
+// scanner_screen.dart
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io' show Platform;
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// ---------------------------------------------------
-/// 1. Normaliza o nome do entregador (SEM lista fixa)
+/// 1. Normaliza o nome do entregador
 /// ---------------------------------------------------
 String normalizeEntregadorName(String name) {
   if (name.isEmpty) return name;
 
-  // Remove acentos
   String step = name
       .replaceAll('á', 'a')
       .replaceAll('à', 'a')
@@ -38,23 +36,15 @@ String normalizeEntregadorName(String name) {
       .replaceAll('ù', 'u')
       .replaceAll('ç', 'c');
 
-  // Mantém apenas letras, hífen e espaços
   step = step.replaceAll(RegExp(r'[^a-zA-Z\s\-]'), '');
-
-  // Normaliza espaços e hífens
-  step = step
-      .replaceAll(RegExp(r'\s+'), ' ')      // múltiplos → 1
-      .replaceAll(RegExp(r'\s*-\s*'), '-') // hífen limpo
-      .trim();
+  step = step.replaceAll(RegExp(r'\s+'), ' ').replaceAll(RegExp(r'\s*-\s*'), '-').trim();
 
   if (step.isEmpty) return name;
 
-  // Força Lala-Move se aparecer "lala" + "move"
   if (step.toLowerCase().contains('lala') && step.toLowerCase().contains('move')) {
     return 'Lala-Move';
   }
 
-  // Capitaliza cada palavra
   return step.split(' ').map((word) {
     if (word.isEmpty) return word;
     final lower = word.toLowerCase();
@@ -63,86 +53,67 @@ String normalizeEntregadorName(String name) {
 }
 
 /// ---------------------------------------------------
-/// 2. Serviço de entregas (SEM CACHE LOCAL)
+/// 2. Serviço de entregas com FIRESTORE
 /// ---------------------------------------------------
 class DeliveryService {
-  // REMOVIDO: static final Map<String, DateTime> _checkCache = {};
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// Sempre consulta a API para verificar duplicata
+  /// Verifica se o pedido já foi atribuído ou concluído
   static Future<bool> checkDuplicate(String id) async {
-    final base = dotenv.env['API_BASE_URL'] ?? '';
-    final ep = dotenv.env['CHECK_DUPLICATE_ENDPOINT'] ?? '';
-    if (base.isEmpty || ep.isEmpty) return false;
-
-    final url = Uri.parse('$base$ep&id_pedido=$id');
     try {
-      final resp = await http.get(url).timeout(const Duration(seconds: 10));
-      if (resp.body.isNotEmpty) {
-        final data = jsonDecode(resp.body);
-        return data['status'] == 'success' && data['is_duplicate'] == true;
-      }
+      final doc = await _firestore.collection('pedidos').doc(id).get();
+      if (!doc.exists) return false;
+
+      final data = doc.data()!;
+      final status = data['status']?.toString() ?? '';
+      return status == 'em andamento' || status == 'concluido';
     } catch (e) {
       if (kDebugMode) debugPrint('checkDuplicate erro: $e');
+      return false;
     }
-    return false;
   }
 
-  static Future<Map<String, dynamic>?> registerDeliveryWithPhone(
-      String id, String entregador) async {
-    final base = dotenv.env['API_BASE_URL'] ?? '';
-    final ep = dotenv.env['ASSIGN_AND_SAVE_DELIVERY_ENDPOINT'] ?? '';
-    if (base.isEmpty || ep.isEmpty) return null;
-
-    final url = Uri.parse('$base$ep');
-    final body = {
-      'id_pedido': id,
-      'nome_entregador': entregador,
-      'timestamp': DateTime.now().toIso8601String(),
-      'bairro': 'N/A',
-      'rua': 'N/A',
-      'telefone': 'N/A',
-      'nome': 'N/A',
-      'pagamento': 'N/A',
-      'numero': 'N/A',
-      'cidade': 'N/A',
-    };
-
+  /// Atribui o pedido ao entregador e muda status
+  static Future<Map<String, dynamic>?> assignDelivery(String id, String entregador) async {
     try {
-      final resp = await http
-          .post(url,
-              headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-              body: body)
-          .timeout(const Duration(seconds: 10));
+      final docRef = _firestore.collection('pedidos').doc(id);
+      final doc = await docRef.get();
 
-      if (resp.statusCode != 200 || resp.body.isEmpty) return null;
+      if (!doc.exists) {
+        return {'success': false, 'message': 'Pedido não encontrado'};
+      }
 
-      final data = jsonDecode(resp.body);
-      final success = data['status'] == 'success';
-      final phone = data['telefone']?.toString();
+      final data = doc.data()!;
+      final telefone = data['cliente']?['telefone']?.toString() ?? 'N/A';
 
-      return {'success': success, 'phone': phone};
+      await docRef.update({
+        'entregador': entregador,
+        'status': 'em andamento',
+        'timestamp_atribuicao': FieldValue.serverTimestamp(),
+      });
+
+      return {
+        'success': true,
+        'phone': telefone,
+        'message': 'Pedido atribuído com sucesso'
+      };
     } catch (e) {
-      if (kDebugMode) debugPrint('registerDeliveryWithPhone erro: $e');
+      if (kDebugMode) debugPrint('assignDelivery erro: $e');
       return null;
     }
   }
 
+  /// Envia SMS "Saiu pra entrega"
   static Future<void> enviarMensagemSaiuPraEntrega(String? phoneNumber) async {
-    if (phoneNumber == null ||
-        phoneNumber == 'N/A' ||
-        phoneNumber.trim().isEmpty) return;
+    if (phoneNumber == null || phoneNumber == 'N/A' || phoneNumber.trim().isEmpty) return;
 
-    const mensagem =
-        "Vrummm! O seu pedido acabou de sair para entrega!\n\nMensagem automática da Ao Gosto Carnes.";
+    const mensagem = "Vrummm! O seu pedido acabou de sair para entrega!\n\nMensagem automática da Ao Gosto Carnes.";
     final phone = phoneNumber.replaceAll(RegExp(r'\D'), '');
     if (phone.isEmpty || phone.length < 10) return;
 
     final messageApiUrl = dotenv.env['MESSAGE_API_URL'];
     final messageApiToken = dotenv.env['MESSAGE_API_TOKEN'];
-    if (messageApiUrl == null ||
-        messageApiUrl.isEmpty ||
-        messageApiToken == null ||
-        messageApiToken.isEmpty) return;
+    if (messageApiUrl == null || messageApiUrl.isEmpty || messageApiToken == null || messageApiToken.isEmpty) return;
 
     final payload = {"number": phone, "text": mensagem};
     final headers = {
@@ -153,8 +124,7 @@ class DeliveryService {
 
     try {
       await http
-          .post(Uri.parse(messageApiUrl),
-              headers: headers, body: jsonEncode(payload))
+          .post(Uri.parse(messageApiUrl), headers: headers, body: jsonEncode(payload))
           .timeout(const Duration(seconds: 10));
     } catch (e) {
       if (kDebugMode) debugPrint("Erro ao enviar mensagem: $e");
@@ -172,8 +142,7 @@ class ScannerScreen extends StatefulWidget {
   State<ScannerScreen> createState() => _ScannerScreenState();
 }
 
-class _ScannerScreenState extends State<ScannerScreen>
-    with TickerProviderStateMixin {
+class _ScannerScreenState extends State<ScannerScreen> with TickerProviderStateMixin {
   MobileScannerController? _camCtrl;
   bool _processing = false;
   String? _entregador;
@@ -191,17 +160,11 @@ class _ScannerScreenState extends State<ScannerScreen>
 
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
-    _scanLineCtrl = AnimationController(
-        duration: const Duration(milliseconds: 1500), vsync: this)
-      ..repeat(reverse: true);
-    _scanLineAnim =
-        CurvedAnimation(parent: _scanLineCtrl, curve: Curves.easeInOut);
+    _scanLineCtrl = AnimationController(duration: const Duration(milliseconds: 1500), vsync: this)..repeat(reverse: true);
+    _scanLineAnim = CurvedAnimation(parent: _scanLineCtrl, curve: Curves.easeInOut);
 
-    _pulseCtrl = AnimationController(
-        duration: const Duration(milliseconds: 2000), vsync: this)
-      ..repeat(reverse: true);
-    _pulseAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
-        CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
+    _pulseCtrl = AnimationController(duration: const Duration(milliseconds: 2000), vsync: this)..repeat(reverse: true);
+    _pulseAnim = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
 
     _init();
   }
@@ -243,17 +206,12 @@ class _ScannerScreenState extends State<ScannerScreen>
       SnackBar(
         content: Row(
           children: [
-            Icon(isError ? Icons.error_outline : Icons.check_circle_outline,
-                color: Colors.white),
+            Icon(isError ? Icons.error_outline : Icons.check_circle_outline, color: Colors.white),
             const SizedBox(width: 12),
-            Expanded(
-                child: Text(txt,
-                    style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w500))),
+            Expanded(child: Text(txt, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500))),
           ],
         ),
-        backgroundColor:
-            isError ? Colors.red.shade600 : const Color(0xFFF28C38),
+        backgroundColor: isError ? Colors.red.shade600 : const Color(0xFFF28C38),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: Duration(seconds: isError ? 3 : 2),
@@ -269,7 +227,6 @@ class _ScannerScreenState extends State<ScannerScreen>
     final id = _extractId(raw);
     if (id == null || id.isEmpty) return;
 
-    // Debounce: evita múltiplos scans do mesmo QR em sequência rápida
     if (_lastScannedId == id) return;
     _lastScannedId = id;
 
@@ -287,10 +244,7 @@ class _ScannerScreenState extends State<ScannerScreen>
       await _camCtrl?.stop();
     } catch (_) {}
 
-    // SEMPRE consulta a API (sem cache local)
-    final isDuplicate = await DeliveryService.checkDuplicate(id)
-        .timeout(const Duration(milliseconds: 1500), onTimeout: () => false);
-
+    final isDuplicate = await DeliveryService.checkDuplicate(id);
     if (isDuplicate) {
       HapticFeedback.heavyImpact();
       _showMessage('Este pedido já foi escaneado', isError: true);
@@ -299,12 +253,27 @@ class _ScannerScreenState extends State<ScannerScreen>
       return;
     }
 
+    final entregador = _entregador;
+    if (entregador == null || entregador.isEmpty) {
+      _showMessage('Erro: entregador não encontrado', isError: true);
+      setState(() => _processing = false);
+      return;
+    }
+
+    final result = await DeliveryService.assignDelivery(id, entregador);
+    if (result == null || !result['success']) {
+      _showMessage(result?['message'] ?? 'Erro ao atribuir pedido', isError: true);
+      setState(() => _processing = false);
+      return;
+    }
+
     HapticFeedback.lightImpact();
     _showMessage('Pedido registrado com sucesso!');
     await Future.delayed(const Duration(milliseconds: 400));
     if (mounted) Navigator.pop(context, true);
 
-    _backgroundTasks(id);
+    // Envia SMS em background
+    DeliveryService.enviarMensagemSaiuPraEntrega(result['phone']);
   }
 
   String? _extractId(String url) {
@@ -313,25 +282,6 @@ class _ScannerScreenState extends State<ScannerScreen>
       return uri?.queryParameters['id'] ?? url.trim();
     } catch (_) {
       return null;
-    }
-  }
-
-  Future<void> _backgroundTasks(String id) async {
-    final entregador = _entregador;
-    if (entregador == null || entregador.isEmpty) return;
-
-    final normalized = normalizeEntregadorName(entregador);
-    if (kDebugMode) {
-      debugPrint('Entregador normalizado: "$entregador" → "$normalized"');
-    }
-
-    try {
-      final result = await DeliveryService.registerDeliveryWithPhone(id, normalized);
-      if (result?['success'] == true) {
-        await DeliveryService.enviarMensagemSaiuPraEntrega(result?['phone']);
-      }
-    } catch (e) {
-      if (kDebugMode) debugPrint('Background error: $e');
     }
   }
 
@@ -364,8 +314,7 @@ class _ScannerScreenState extends State<ScannerScreen>
             MobileScanner(controller: _camCtrl!, onDetect: _onDetect),
 
           // Overlay escuro
-          CustomPaint(
-              size: Size(size.width, size.height), painter: ScannerOverlayPainter()),
+          CustomPaint(size: Size(size.width, size.height), painter: ScannerOverlayPainter()),
 
           // Frame animado (pulso)
           AnimatedBuilder(
@@ -413,8 +362,7 @@ class _ScannerScreenState extends State<ScannerScreen>
             left: 0,
             right: 0,
             child: Container(
-              padding: EdgeInsets.only(
-                  top: safePadding.top + 8, bottom: 16, left: 8, right: 8),
+              padding: EdgeInsets.only(top: safePadding.top + 8, bottom: 16, left: 8, right: 8),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
@@ -429,13 +377,9 @@ class _ScannerScreenState extends State<ScannerScreen>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
+                  _buildGlassButton(icon: Icons.close_rounded, onPressed: () => Navigator.pop(context)),
                   _buildGlassButton(
-                      icon: Icons.close_rounded,
-                      onPressed: () => Navigator.pop(context)),
-                  _buildGlassButton(
-                      icon: _camCtrl?.torchEnabled ?? false
-                          ? Icons.flash_on_rounded
-                          : Icons.flash_off_rounded,
+                      icon: _camCtrl?.torchEnabled ?? false ? Icons.flash_on_rounded : Icons.flash_off_rounded,
                       onPressed: () => _camCtrl?.toggleTorch()),
                 ],
               ),
@@ -451,32 +395,22 @@ class _ScannerScreenState extends State<ScannerScreen>
               children: [
                 Container(
                   padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
-                      shape: BoxShape.circle),
-                  child: const Icon(Icons.qr_code_scanner_rounded,
-                      color: Color(0xFFF28C38), size: 48),
+                  decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), shape: BoxShape.circle),
+                  child: const Icon(Icons.qr_code_scanner_rounded, color: Color(0xFFF28C38), size: 48),
                 ),
                 const SizedBox(height: 20),
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 32),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.7),
                     borderRadius: BorderRadius.circular(30),
-                    border: Border.all(
-                        color: const Color(0xFFF28C38).withOpacity(0.3),
-                        width: 1.5),
+                    border: Border.all(color: const Color(0xFFF28C38).withOpacity(0.3), width: 1.5),
                   ),
                   child: const Text(
                     'Posicione o QR Code na área',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.3),
+                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: 0.3),
                   ),
                 ),
               ],
@@ -493,9 +427,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.8),
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                        color: const Color(0xFFF28C38).withOpacity(0.3),
-                        width: 2),
+                    border: Border.all(color: const Color(0xFFF28C38).withOpacity(0.3), width: 2),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -510,17 +442,9 @@ class _ScannerScreenState extends State<ScannerScreen>
                         ),
                       ),
                       const SizedBox(height: 24),
-                      const Text('Processando pedido...',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 17,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.3)),
+                      const Text('Processando pedido...', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600, letterSpacing: 0.3)),
                       const SizedBox(height: 8),
-                      Text('Aguarde um momento',
-                          style: TextStyle(
-                              color: Colors.white.withOpacity(0.7),
-                              fontSize: 14)),
+                      Text('Aguarde um momento', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14)),
                     ],
                   ),
                 ),
@@ -531,14 +455,12 @@ class _ScannerScreenState extends State<ScannerScreen>
     );
   }
 
-  Widget _buildGlassButton(
-      {required IconData icon, required VoidCallback onPressed}) {
+  Widget _buildGlassButton({required IconData icon, required VoidCallback onPressed}) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.15),
         borderRadius: BorderRadius.circular(16),
-        border:
-            Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+        border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
       ),
       child: Material(
         color: Colors.transparent,
@@ -561,9 +483,7 @@ class _ScannerScreenState extends State<ScannerScreen>
 class ScannerOverlayPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.black.withOpacity(0.7)
-      ..style = PaintingStyle.fill;
+    final paint = Paint()..color = Colors.black.withOpacity(0.7)..style = PaintingStyle.fill;
 
     final scanAreaSize = size.width * 0.7;
     final left = (size.width - scanAreaSize) / 2;
@@ -627,18 +547,10 @@ class AnimatedFramePainter extends CustomPainter {
       canvas.drawPath(path, cornerPaint);
     }
 
-    drawCorner(Offset(left, top + radius),
-        Offset(left + cornerLength, top + radius),
-        Offset(left, top + radius + cornerLength));
-    drawCorner(Offset(left + scanAreaSize, top + radius),
-        Offset(left + scanAreaSize - cornerLength, top + radius),
-        Offset(left + scanAreaSize, top + radius + cornerLength));
-    drawCorner(Offset(left, top + scanAreaSize - radius),
-        Offset(left + cornerLength, top + scanAreaSize - radius),
-        Offset(left, top + scanAreaSize - radius - cornerLength));
-    drawCorner(Offset(left + scanAreaSize, top + scanAreaSize - radius),
-        Offset(left + scanAreaSize - cornerLength, top + scanAreaSize - radius),
-        Offset(left + scanAreaSize, top + scanAreaSize - radius - cornerLength));
+    drawCorner(Offset(left, top + radius), Offset(left + cornerLength, top + radius), Offset(left, top + radius + cornerLength));
+    drawCorner(Offset(left + scanAreaSize, top + radius), Offset(left + scanAreaSize - cornerLength, top + radius), Offset(left + scanAreaSize, top + radius + cornerLength));
+    drawCorner(Offset(left, top + scanAreaSize - radius), Offset(left + cornerLength, top + scanAreaSize - radius), Offset(left, top + scanAreaSize - radius - cornerLength));
+    drawCorner(Offset(left + scanAreaSize, top + scanAreaSize - radius), Offset(left + scanAreaSize - cornerLength, top + scanAreaSize - radius), Offset(left + scanAreaSize, top + scanAreaSize - radius - cornerLength));
 
     final glowPaint = Paint()
       ..color = const Color(0xFFF28C38).withOpacity(0.1 + (pulseValue * 0.1))
@@ -646,10 +558,7 @@ class AnimatedFramePainter extends CustomPainter {
       ..strokeWidth = 2
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15);
 
-    final glowRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(left, top, scanAreaSize, scanAreaSize),
-        const Radius.circular(32));
-
+    final glowRect = RRect.fromRectAndRadius(Rect.fromLTWH(left, top, scanAreaSize, scanAreaSize), const Radius.circular(32));
     canvas.drawRRect(glowRect, glowPaint);
   }
 

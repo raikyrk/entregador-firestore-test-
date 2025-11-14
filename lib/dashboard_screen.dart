@@ -1,11 +1,10 @@
+// dashboard_screen.dart
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
-import 'dart:io' show File, FileMode;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:image_picker/image_picker.dart';
+import 'dart:io' show File, FileMode;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'main.dart';
 import 'login_screen.dart';
@@ -22,7 +21,7 @@ class DashboardScreen extends StatefulWidget {
 class DashboardScreenState extends State<DashboardScreen> with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
-  
+
   // Cache para dados
   String? _cachedEntregadorName;
   Map<String, dynamic>? _cachedDeliveries;
@@ -67,31 +66,10 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
     }
   }
 
-  Future<void> _uploadLog() async {
-    try {
-      final directory = await getTemporaryDirectory();
-      final file = File('${directory.path}/entregador.log');
-      if (!await file.exists()) return;
-      
-      final baseUrl = dotenv.env['API_BASE_URL'] ?? '';
-      final logUploadEndpoint = dotenv.env['LOG_UPLOAD_ENDPOINT'] ?? '';
-      if (baseUrl.isEmpty || logUploadEndpoint.isEmpty) return;
-      
-      final uri = Uri.parse('$baseUrl$logUploadEndpoint');
-      final request = http.MultipartRequest('POST', uri);
-      request.files.add(await http.MultipartFile.fromPath('log_file', file.path));
-      
-      await request.send().timeout(const Duration(seconds: 10));
-    } catch (e) {
-      debugPrint('Erro ao enviar log: $e');
-    }
-  }
-
   Future<void> _logout(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('entregador');
     await _writeLog('Usuário deslogado');
-    await _uploadLog();
     if (!mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
@@ -103,13 +81,13 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
   Future<void> _refreshDashboard() async {
     if (_isRefreshing) return;
     setState(() => _isRefreshing = true);
-    
+
     await _writeLog('Atualização do painel iniciada');
     await _loadCachedData();
-    
+
     if (!mounted) return;
     setState(() => _isRefreshing = false);
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Row(
@@ -125,7 +103,6 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
         duration: const Duration(seconds: 2),
       ),
     );
-    await _uploadLog();
   }
 
   Future<String> _getEntregadorName() async {
@@ -136,46 +113,41 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
     return name;
   }
 
+  // === CONTAGEM DE ENTREGAS NO FIRESTORE ===
   Future<Map<String, dynamic>> _getDailyDeliveries() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final entregador = prefs.getString('entregador') ?? '';
-      final formattedDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
-      
-      final baseUrl = dotenv.env['API_BASE_URL'] ?? '';
-      final deliveriesEndpoint = dotenv.env['DELIVERIES_ENDPOINT'] ?? '';
-      final completedDeliveriesEndpoint = dotenv.env['COMPLETED_DELIVERIES_ENDPOINT'] ?? '';
-      
-      if (baseUrl.isEmpty || deliveriesEndpoint.isEmpty || completedDeliveriesEndpoint.isEmpty) {
+      if (entregador.isEmpty) {
         return {'completed': 0, 'pending': 0, 'total': 0};
       }
 
-      // Requisições paralelas para melhor performance
-      final results = await Future.wait([
-        http.get(
-          Uri.parse('$baseUrl$deliveriesEndpoint&entregador=${Uri.encodeComponent(entregador)}&date=$formattedDate'),
-        ).timeout(const Duration(seconds: 10)),
-        http.get(
-          Uri.parse('$baseUrl$completedDeliveriesEndpoint&entregador=${Uri.encodeComponent(entregador)}&date=$formattedDate'),
-        ).timeout(const Duration(seconds: 10)),
-      ]);
+      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-      int pendingCount = 0;
-      int completedCount = 0;
+      // Busca entregas pendentes (status: "pendente" ou "em andamento")
+      final pendingSnapshot = await FirebaseFirestore.instance
+          .collection('pedidos')
+          .where('entregador', isEqualTo: entregador)
+          .where('status', whereIn: ['pendente', 'em andamento'])
+          .get();
 
-      if (results[0].statusCode == 200) {
-        final pendingData = jsonDecode(results[0].body);
-        if (pendingData['status'] == 'success') {
-          pendingCount = (pendingData['deliveries'] as List).length;
-        }
-      }
+      // Busca entregas concluídas (status: "concluido" e data_conclusao hoje)
+      final completedSnapshot = await FirebaseFirestore.instance
+          .collection('pedidos')
+          .where('entregador', isEqualTo: entregador)
+          .where('status', isEqualTo: 'concluido')
+          .get();
 
-      if (results[1].statusCode == 200) {
-        final completedData = jsonDecode(results[1].body);
-        if (completedData['status'] == 'success') {
-          completedCount = (completedData['deliveries'] as List).length;
-        }
-      }
+      final pendingCount = pendingSnapshot.docs.length;
+      final completedCount = completedSnapshot.docs
+          .where((doc) {
+            final data = doc.data();
+            final concluido = data['data_conclusao'] as Timestamp?;
+            if (concluido == null) return false;
+            final date = DateFormat('yyyy-MM-dd').format(concluido.toDate());
+            return date == today;
+          })
+          .length;
 
       return {
         'completed': completedCount,
@@ -188,42 +160,47 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
     }
   }
 
+  // === TEMPO MÉDIO DE ENTREGA ===
   Future<Map<String, String>> _getAverageDeliveryTime() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final entregador = prefs.getString('entregador') ?? '';
-      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-      final yesterday = DateFormat('yyyy-MM-dd').format(DateTime.now().subtract(const Duration(days: 1)));
-      
-      final baseUrl = dotenv.env['API_BASE_URL'] ?? '';
-      final completedDeliveriesEndpoint = dotenv.env['COMPLETED_DELIVERIES_ENDPOINT'] ?? '';
-      
-      if (baseUrl.isEmpty || completedDeliveriesEndpoint.isEmpty) {
+      if (entregador.isEmpty) {
         return {'averageTime': '0 min', 'difference': '0 min'};
       }
 
-      Future<double> calculateAverageForDate(String date) async {
-        final response = await http.get(
-          Uri.parse('$baseUrl$completedDeliveriesEndpoint&entregador=${Uri.encodeComponent(entregador)}&date=$date'),
-        ).timeout(const Duration(seconds: 10));
-        
-        if (response.statusCode != 200) return 0.0;
-        
-        final data = jsonDecode(response.body);
-        if (data['status'] != 'success') return 0.0;
-        
-        final deliveries = List<Map<String, dynamic>>.from(data['deliveries']);
+      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final yesterday = DateFormat('yyyy-MM-dd').format(DateTime.now().subtract(const Duration(days: 1)));
+
+      Future<double> calculateAverageForDate(String dateStr) async {
+        final start = DateTime.parse('$dateStr 00:00:00');
+        final end = DateTime.parse('$dateStr 23:59:59');
+
+        final snapshot = await FirebaseFirestore.instance
+            .collection('pedidos')
+            .where('entregador', isEqualTo: entregador)
+            .where('status', isEqualTo: 'concluido')
+            .get();
+
+        final deliveries = snapshot.docs.where((doc) {
+          final data = doc.data();
+          final concluido = data['data_conclusao'] as Timestamp?;
+          if (concluido == null) return false;
+          final concluidoDate = concluido.toDate();
+          return concluidoDate.isAfter(start) && concluidoDate.isBefore(end);
+        }).toList();
+
         if (deliveries.isEmpty) return 0.0;
-        
+
         double totalMinutes = 0.0;
-        for (var delivery in deliveries) {
-          totalMinutes += (delivery['duracao_minutos']?.toDouble() ?? 0.0);
+        for (var doc in deliveries) {
+          final data = doc.data();
+          totalMinutes += (data['duracao_minutos']?.toDouble() ?? 0.0);
         }
-        
+
         return totalMinutes / deliveries.length;
       }
 
-      // Requisições paralelas
       final results = await Future.wait([
         calculateAverageForDate(today),
         calculateAverageForDate(yesterday),
@@ -314,19 +291,12 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Header com boas-vindas
               _buildWelcomeCard(),
               const SizedBox(height: 20),
-              
-              // Card QR Code destacado
               _buildQRCodeCard(),
               const SizedBox(height: 20),
-              
-              // Cards de estatísticas
               _buildStatsCards(),
               const SizedBox(height: 20),
-              
-              // Card de tempo médio
               _buildAverageTimeCard(),
             ],
           ),
@@ -376,7 +346,7 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'Bom trabalho hoje! 🚀',
+                  'Bom trabalho hoje!',
                   style: TextStyle(
                     fontSize: 13,
                     color: Color(0xFF6B7280),
@@ -388,7 +358,6 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
           ),
           Row(
             children: [
-              // Botão de refresh
               Material(
                 color: Colors.transparent,
                 child: InkWell(
@@ -425,53 +394,15 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
                 ),
               ),
               const SizedBox(width: 12),
-              // Menu de perfil
-              PopupMenuButton<String>(
-                onSelected: (value) async {
-                  if (value == 'upload_report') {
-                    await _handlePhotoUpload();
-                  }
-                },
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                itemBuilder: (BuildContext context) => [
-                  PopupMenuItem<String>(
-                    value: 'upload_report',
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFF28C38), Color(0xFFF5A623)],
-                            ),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
-                        ),
-                        const SizedBox(width: 12),
-                        const Text(
-                          'Enviar Relatório',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w500,
-                            fontFamily: 'Poppins',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                offset: const Offset(0, 56),
-                child: Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF5E6),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFF28C38).withOpacity(0.2), width: 1.5),
-                  ),
-                  child: const Icon(Icons.person_rounded, color: Color(0xFFF28C38), size: 24),
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF5E6),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFF28C38).withOpacity(0.2), width: 1.5),
                 ),
+                child: const Icon(Icons.person_rounded, color: Color(0xFFF28C38), size: 24),
               ),
             ],
           ),
@@ -875,141 +806,5 @@ class DashboardScreenState extends State<DashboardScreen> with SingleTickerProvi
         ],
       ),
     );
-  }
-
-  Future<void> _handlePhotoUpload() async {
-    await _writeLog('Botão Enviar Relatórios pressionado');
-    if (!mounted) return;
-    
-    try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? photo = await picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 85, // Comprimir imagem para upload mais rápido
-      );
-      
-      if (!mounted) return;
-      if (photo == null) {
-        await _writeLog('Nenhuma foto capturada');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.info_outline, color: Colors.white),
-                SizedBox(width: 8),
-                Text('Nenhuma foto foi capturada.'),
-              ],
-            ),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        return;
-      }
-
-      // Mostrar indicador de carregamento
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              ),
-              SizedBox(width: 12),
-              Text('Enviando foto...'),
-            ],
-          ),
-          duration: Duration(minutes: 1),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-
-      final prefs = await SharedPreferences.getInstance();
-      final entregador = prefs.getString('entregador') ?? 'Desconhecido';
-      final timestamp = DateTime.now().toIso8601String();
-      
-      final baseUrl = dotenv.env['API_BASE_URL'] ?? '';
-      final photoUploadEndpoint = dotenv.env['PHOTO_UPLOAD_ENDPOINT'] ?? '';
-      
-      if (baseUrl.isEmpty || photoUploadEndpoint.isEmpty) {
-        await _writeLog('Erro: Variáveis de ambiente não definidas');
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Erro de configuração. Contate o suporte.'),
-            backgroundColor: Color(0xFFEF4444),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        return;
-      }
-
-      final uri = Uri.parse('$baseUrl$photoUploadEndpoint');
-      final request = http.MultipartRequest('POST', uri)
-        ..fields['entregador'] = entregador
-        ..fields['timestamp'] = timestamp
-        ..files.add(await http.MultipartFile.fromPath('photo', photo.path));
-
-      final response = await request.send().timeout(const Duration(seconds: 15));
-      await _writeLog('Status do upload da foto: ${response.statusCode}');
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).clearSnackBars();
-
-      if (response.statusCode == 200) {
-        await _writeLog('Foto enviada com sucesso');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 8),
-                Text('Foto enviada com sucesso!'),
-              ],
-            ),
-            backgroundColor: Color(0xFF16A34A),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      } else {
-        await _writeLog('Falha ao enviar foto: Status ${response.statusCode}');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.error_outline, color: Colors.white),
-                SizedBox(width: 8),
-                Text('Falha ao enviar a foto.'),
-              ],
-            ),
-            backgroundColor: Color(0xFFEF4444),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } catch (e) {
-      await _writeLog('Erro ao enviar foto: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).clearSnackBars();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.error_outline, color: Colors.white),
-              SizedBox(width: 8),
-              Text('Erro ao capturar ou enviar a foto.'),
-            ],
-          ),
-          backgroundColor: Color(0xFFEF4444),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-    await _uploadLog();
   }
 }

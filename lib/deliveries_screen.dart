@@ -293,7 +293,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
   Future<void> enviarMensagemConcluido(String? phoneNumber) async {
     if (phoneNumber == null || phoneNumber == 'N/A' || phoneNumber.trim().isEmpty) return;
 
-    const mensagem = "Parece que o seu pedido foi concluído com sucesso! \n\nEspero que goste de nossos produtos";
+    const mensagem = "Parece que o seu pedido foi concluído com sucesso! ✅ \n\nEspero que goste de nossos produtos. 🧡";
     final phone = phoneNumber.replaceAll(RegExp(r'\D'), '');
     if (phone.isEmpty) return;
 

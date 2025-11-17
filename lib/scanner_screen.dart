@@ -117,7 +117,7 @@ class DeliveryService {
   static Future<void> enviarMensagemSaiuPraEntrega(String? phoneNumber) async {
     if (phoneNumber == null || phoneNumber == 'N/A' || phoneNumber.trim().isEmpty) return;
 
-    const mensagem = "Vrummm! O seu pedido acabou de sair para entrega!\n\nMensagem automática da Ao Gosto Carnes.";
+    const mensagem = "Vrum! 💨  O seu pedido acabou de sair para entrega!\n\nMensagem automática da Ao Gosto Carnes.";
     final phone = phoneNumber.replaceAll(RegExp(r'\D'), '');
     if (phone.isEmpty || phone.length < 10) return;
 

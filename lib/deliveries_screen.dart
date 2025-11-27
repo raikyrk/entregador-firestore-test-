@@ -1029,15 +1029,17 @@ String _buildAddressString(Map<String, dynamic> d) {
                                           ),
                                           const SizedBox(height: 4),
                                           Text(
-                                            _tabController.index == 0
-                                                ? 'Entregas do dia'
-                                                : 'Histórico: ${_selectedDates.map((d) => DateFormat('dd/MM').format(d)).join(', ')}',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: Colors.grey[600],
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
+  _tabController.index == 0
+      ? 'Entregas do dia'
+      : _selectedDates.length == 1
+          ? 'Histórico: ${DateFormat('dd/MM').format(_selectedDates.first)}'
+          : 'Histórico: ${DateFormat('dd/MM').format(_selectedDates.first)} - ${DateFormat('dd/MM').format(_selectedDates.last)}',
+  style: TextStyle(
+    fontSize: 14,
+    color: Colors.grey[600],
+  ),
+  overflow: TextOverflow.ellipsis,
+),
                                         ],
                                       ),
                                     ),

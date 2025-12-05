@@ -13,9 +13,7 @@ import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'constants/delivery_status.dart'; // NOVO
 
-/// ---------------------------------------------------
-/// 1. Normaliza o nome do entregador
-/// ---------------------------------------------------
+
 String normalizeEntregadorName(String name) {
   if (name.isEmpty) return name;
 
@@ -53,9 +51,6 @@ String normalizeEntregadorName(String name) {
   }).join(' ');
 }
 
-/// ---------------------------------------------------
-/// 2. Serviço de entregas com FIRESTORE
-/// ---------------------------------------------------
 class DeliveryService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -143,9 +138,7 @@ class DeliveryService {
   }
 }
 
-/// ---------------------------------------------------
-/// 3. Tela do Scanner
-/// ---------------------------------------------------
+
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({super.key});
 
@@ -283,7 +276,7 @@ class _ScannerScreenState extends State<ScannerScreen> with TickerProviderStateM
     await Future.delayed(const Duration(milliseconds: 400));
     if (mounted) Navigator.pop(context, true);
 
-    // Envia SMS em background
+    
     DeliveryService.enviarMensagemSaiuPraEntrega(result['phone']);
   }
 
@@ -320,14 +313,14 @@ class _ScannerScreenState extends State<ScannerScreen> with TickerProviderStateM
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Câmera
+          
           if (_camCtrl != null && (Platform.isAndroid || Platform.isIOS))
             MobileScanner(controller: _camCtrl!, onDetect: _onDetect),
 
-          // Overlay escuro
+          
           CustomPaint(size: Size(size.width, size.height), painter: ScannerOverlayPainter()),
 
-          // Frame animado (pulso)
+          
           AnimatedBuilder(
             animation: _pulseAnim,
             builder: (context, child) => CustomPaint(
@@ -336,7 +329,7 @@ class _ScannerScreenState extends State<ScannerScreen> with TickerProviderStateM
             ),
           ),
 
-          // Linha de scan animada
+          
           AnimatedBuilder(
             animation: _scanLineAnim,
             builder: (context, child) {
@@ -488,9 +481,6 @@ class _ScannerScreenState extends State<ScannerScreen> with TickerProviderStateM
   }
 }
 
-/// ---------------------------------------------------
-/// 4. Overlay escuro com recorte
-/// ---------------------------------------------------
 class ScannerOverlayPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -513,9 +503,7 @@ class ScannerOverlayPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter old) => false;
 }
 
-/// ---------------------------------------------------
-/// 5. Frame animado (cantos + brilho)
-/// ---------------------------------------------------
+
 class AnimatedFramePainter extends CustomPainter {
   final double pulseValue;
   AnimatedFramePainter(this.pulseValue);

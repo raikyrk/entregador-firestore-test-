@@ -1,4 +1,4 @@
-// deliveries_screen.dart - ARQUIVO ÚNICO (PARTE 1 + PARTE 2 CORRIGIDAS)
+// deliveries_screen.dart 
 import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -360,7 +360,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
     }
   }
 
-  // === DETALHES DO PEDIDO ===
+  
   void _showDeliveryDetails(BuildContext context, Map<String, dynamic> delivery) {
   showModalBottomSheet(
     context: context,
@@ -438,7 +438,7 @@ class _DeliveriesScreenState extends State<DeliveriesScreen>
                         '${delivery['endereco']?['bairro'] ?? 'N/A'}\n'
                         '${delivery['endereco']?['cidade'] ?? 'N/A'}',
                   ),
-                  // CEP – verificação segura
+                  
                   if ((delivery['endereco']?['cep']?.toString().trim().isNotEmpty ?? false))
                     _buildDetailSection(
                       icon: Icons.pin_drop_outlined,

@@ -1,11 +1,16 @@
-// main.dart - VERSÃO FINAL TURBINADA (atualização automática com estilo PRO)
+// main.dart - VERSÃO FINAL (Auth Check + Shorebird + Splash Screen)
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // Importante para o login
 import 'firebase_options.dart';
 import 'login_screen.dart';
+import 'dashboard_screen.dart'; // Importante para ir direto ao painel
 
+// ==========================================
+// WIDGET UTILITÁRIO (Botão com Animação)
+// ==========================================
 class AnimatedScaleButton extends StatefulWidget {
   final VoidCallback onPressed;
   final Widget child;
@@ -42,6 +47,9 @@ class _AnimatedScaleButtonState extends State<AnimatedScaleButton> {
   }
 }
 
+// ==========================================
+// MAIN APP
+// ==========================================
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -54,7 +62,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Ao Gosto Carnes - Ent hibador',
+      title: 'Ao Gosto Delivery',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.orange,
@@ -73,38 +81,47 @@ class MyApp extends StatelessWidget {
           color: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: const Color(0xFFF28C38).withValues(alpha: 0.1), width: 1),
+            side: BorderSide(color: const Color(0xFFF28C38).withOpacity(0.1), width: 1),
           ),
           elevation: 2,
           margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
         ),
       ),
-      home: const UpdateChecker(child: LoginScreen()),
+      // AQUI MUDOU: Chamamos o AppBootstrap em vez do Login direto
+      home: const AppBootstrap(),
     );
   }
 }
 
-class UpdateChecker extends StatefulWidget {
-  final Widget child;
-  const UpdateChecker({required this.child, super.key});
+// ==========================================
+// TELA DE INICIALIZAÇÃO (SPLASH + UPDATE + AUTH)
+// ==========================================
+class AppBootstrap extends StatefulWidget {
+  const AppBootstrap({super.key});
+
   @override
-  State<UpdateChecker> createState() => _UpdateCheckerState();
+  State<AppBootstrap> createState() => _AppBootstrapState();
 }
 
-class _UpdateCheckerState extends State<UpdateChecker> with TickerProviderStateMixin {
+class _AppBootstrapState extends State<AppBootstrap> with TickerProviderStateMixin {
   final _shorebird = ShorebirdCodePush();
   late AnimationController _spinController;
   late Animation<double> _spinAnimation;
-  bool _isChecking = true;
+  
   bool _isDownloading = false;
-  String _message = "Verificando atualizações...";
+  String _message = "Iniciando sistema...";
 
   @override
   void initState() {
     super.initState();
+    // Animação bonita do ícone girando
     _spinController = AnimationController(duration: const Duration(seconds: 2), vsync: this)..repeat();
-    _spinAnimation = Tween<double>(begin: 0, end: 1).animate(_spinController);
-    _checkForUpdate();
+    _spinAnimation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _spinController, curve: Curves.linear)
+    );
+    
+    // Começa a mágica
+    _initializeApp();
   }
 
   @override
@@ -113,71 +130,132 @@ class _UpdateCheckerState extends State<UpdateChecker> with TickerProviderStateM
     super.dispose();
   }
 
-  Future<void> _checkForUpdate() async {
+  Future<void> _initializeApp() async {
+    // 1. Verifica Atualizações (Shorebird)
+    await _checkShorebirdUpdates();
+
+    // 2. Verifica Login (SharedPreferences)
+    if (mounted) {
+      await _checkLoginAndNavigate();
+    }
+  }
+
+  Future<void> _checkShorebirdUpdates() async {
     try {
+      setState(() => _message = "Verificando atualizações...");
+      
       final hasUpdate = await _shorebird.isNewPatchAvailableForDownload();
-      if (!hasUpdate) {
-        if (mounted) setState(() => _isChecking = false);
-        return;
-      }
+      if (hasUpdate) {
+        setState(() {
+          _isDownloading = true;
+          _message = "Baixando nova versão...\nÉ rapidinho!";
+        });
 
-      setState(() {
-        _isDownloading = true;
-        _message = "Baixando nova versão...\nFica tranquilo, é rapidinho!";
-      });
+        await _shorebird.downloadUpdateIfAvailable();
 
-      await _shorebird.downloadUpdateIfAvailable();
-
-      if (mounted) {
-        setState(() => _message = "Tudo atualizado!\nReabra o app pra ver as novidades");
-        await Future.delayed(const Duration(seconds: 2));
-        _isChecking = false;
+        setState(() => _message = "Atualizado com sucesso!");
+        await Future.delayed(const Duration(seconds: 1)); // Delay para ler a msg
       }
     } catch (e) {
-      if (mounted) setState(() => _isChecking = false);
+      // Se der erro no update, segue a vida (não trava o app)
+      print("Erro Shorebird: $e");
+    }
+  }
+
+  Future<void> _checkLoginAndNavigate() async {
+    setState(() => _message = "Verificando credenciais...");
+    
+    // Delay mínimo para a animação não ser "piscada" (opcional, remove sensação de bug)
+    await Future.delayed(const Duration(milliseconds: 800));
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final entregador = prefs.getString('entregador');
+
+      if (!mounted) return;
+
+      if (entregador != null && entregador.isNotEmpty) {
+        // === USUÁRIO LOGADO -> DASHBOARD ===
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const DashboardScreen()),
+        );
+      } else {
+        // === NÃO LOGADO -> LOGIN ===
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const LoginScreen()),
+        );
+      }
+    } catch (e) {
+      // Erro de disco? Vai pro login por segurança
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const LoginScreen()),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isChecking || _isDownloading) {
-      return Scaffold(
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0xFFF28C38), Color(0xFFF5A623)],
-            ),
-          ),
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                RotationTransition(
-                  turns: _spinAnimation,
-                  child: const Icon(Icons.autorenew_rounded, size: 90, color: Colors.white),
-                ),
-                const SizedBox(height: 40),
-                Text(
-                  _message,
-                  style: const TextStyle(fontSize: 20, color: Colors.white, fontWeight: FontWeight.bold, height: 1.4),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 40),
-                if (_isDownloading)
-                  const SizedBox(
-                    width: 80,
-                    height: 80,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 6),
-                  ),
-              ],
-            ),
+    return Scaffold(
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFFF28C38), Color(0xFFF5A623)],
           ),
         ),
-      );
-    }
-
-    return widget.child;
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Ícone Giratório
+            RotationTransition(
+              turns: _spinAnimation,
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.sync, size: 60, color: Colors.white),
+              ),
+            ),
+            const SizedBox(height: 40),
+            
+            // Texto de Status
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: Text(
+                _message,
+                key: ValueKey(_message),
+                style: const TextStyle(
+                  fontSize: 18, 
+                  color: Colors.white, 
+                  fontWeight: FontWeight.w600, 
+                  height: 1.4,
+                  letterSpacing: 0.5
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            
+            const SizedBox(height: 30),
+            
+            // Barra de Progresso (só se estiver baixando)
+            if (_isDownloading)
+              SizedBox(
+                width: 200,
+                child: LinearProgressIndicator(
+                  backgroundColor: Colors.white.withOpacity(0.2),
+                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }

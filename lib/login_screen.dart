@@ -4,9 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:http/http.dart' as http; // ADICIONADO
-import 'dart:convert'; // ADICIONADO para jsonDecode
-import 'main.dart'; // AnimatedScaleButton
+import 'package:http/http.dart' as http; 
+import 'dart:convert'; 
+import 'main.dart'; 
 import 'dashboard_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -35,7 +35,7 @@ class LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // === LOGIN COM FIRESTORE ===
+  
   Future<void> _login() async {
     setState(() {
       _errorMessage = null;
@@ -50,7 +50,7 @@ class LoginScreenState extends State<LoginScreen> {
     }
 
     try {
-      // Busca o entregador no Firestore
+      
       final doc = await FirebaseFirestore.instance
           .collection('entregadores')
           .doc(pin)
@@ -72,13 +72,13 @@ class LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // Salva no SharedPreferences
+      
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('entregador', nomeEntregador);
 
       if (!mounted) return;
 
-      // Vai para o dashboard
+      
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const DashboardScreen()),
@@ -90,7 +90,7 @@ class LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // === VERIFICAÇÃO DE ATUALIZAÇÃO (via .env) ===
+  
   Future<void> _verificarAtualizacao() async {
     try {
       final baseUrl = dotenv.env['API_BASE_URL'] ?? '';
@@ -110,7 +110,7 @@ class LoginScreenState extends State<LoginScreen> {
 
       if (response.statusCode != 200) return;
 
-      final data = jsonDecode(response.body); // AGORA FUNCIONA
+      final data = jsonDecode(response.body); 
       if (data['status'] != 'success') return;
 
       final sha256Checksum = (data['sha256Checksum'] ?? '').toString().toLowerCase();
@@ -124,7 +124,7 @@ class LoginScreenState extends State<LoginScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => PopScope( // SUBSTITUÍDO WillPopScope por PopScope
+        builder: (_) => PopScope( 
           canPop: false,
           child: AlertDialog(
             title: const Text('Atualização Obrigatória'),

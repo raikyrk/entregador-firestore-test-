@@ -52,7 +52,6 @@ class DashboardScreenState extends State<DashboardScreen>
   }
 
   // ==================== LÓGICA DE BACKEND (MANTIDA) ====================
-  // (Mantive toda a lógica intacta para garantir funcionamento)
 
   Future<void> _loadCachedData() async {
     await _getEntregadorName();
@@ -179,7 +178,6 @@ class DashboardScreenState extends State<DashboardScreen>
         final end = DateTime.parse('$dateStr 23:59:59');
 
         // Busca TODOS os pedidos concluídos deste entregador
-        // (Nota: Filtrar por data no cliente é mais seguro se não tiver index composto)
         final snapshot = await FirebaseFirestore.instance
             .collection('pedidos')
             .where('entregador', isEqualTo: entregador)
@@ -274,12 +272,11 @@ class DashboardScreenState extends State<DashboardScreen>
   Widget build(BuildContext context) {
     // Paleta de Cores Premium
     const Color bgBase = Color(0xFFF9FAFB); // Cinza muito leve
-    const Color orangePrimary = Color(0xFFFF6B00); // Laranja Vibrante (Estilo iFood/Rappi)
+    const Color orangePrimary = Color(0xFFFF6B00); // Laranja Vibrante
     const Color textDark = Color(0xFF1F2937);
 
     return Scaffold(
       backgroundColor: bgBase,
-      // Sem AppBar padrão. Usaremos um SafeArea com design customizado.
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _refreshDashboard,
@@ -312,6 +309,9 @@ class DashboardScreenState extends State<DashboardScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
+                
+                // === [NOVO] Card Painel de Entregas ===
+                _buildDeliveryPanelCard(),
                 
                 // 4. Grid de Estatísticas (Cards Flutuantes)
                 _buildStatsGrid(),
@@ -509,6 +509,101 @@ class DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  // === NOVO WIDGET: CARD PAINEL DE ENTREGAS ===
+  Widget _buildDeliveryPanelCard() {
+    // Definindo as cores locais para este card para garantir a harmonia
+    const Color orangePrimary = Color(0xFFFF6B00);
+    // Um tom muito sutil de laranja para o fundo do card, quase um creme
+    const Color vibrantOrangeSurface = Color(0xFFFFF3EB); 
+
+    return _BouncyButton(
+      onTap: () {
+        Navigator.push(
+          context,
+          // Supondo que initialTabIndex: 0 seja a aba de "Todos" ou "Pendentes"
+          MaterialPageRoute(builder: (context) => const DeliveriesScreen(initialTabIndex: 0)),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          // MUDANÇA 1: Cor de fundo tingida de laranja claro em vez de branco puro
+          color: vibrantOrangeSurface,
+          borderRadius: BorderRadius.circular(24),
+          // MUDANÇA 2: Borda sutil na cor laranja principal
+          border: Border.all(color: orangePrimary.withOpacity(0.15), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              // MUDANÇA 3: Sombra levemente alaranjada para um "glow" quente e sutil
+              color: orangePrimary.withOpacity(0.08),
+              blurRadius: 25,
+              offset: const Offset(0, 8),
+              spreadRadius: 0,
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Ícone com fundo Laranja mais forte que o card
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                // MUDANÇA 4: Fundo do ícone com mais opacidade para destaque
+                color: orangePrimary.withOpacity(0.15), 
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.dashboard_customize_rounded, 
+                // MUDANÇA 5: Ícone na cor laranja vibrante principal
+                color: orangePrimary, 
+                size: 24
+              ),
+            ),
+            const SizedBox(width: 16),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Painel de Entregas',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      // Mantemos o texto escuro para contraste
+                      color: Color(0xFF1F2937), 
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  
+                  
+                ],
+              ),
+            ),
+            // Seta indicativa
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                // MUDANÇA 6: Fundo branco para a seta "saltar" do fundo laranja claro
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.03),
+                    blurRadius: 5,
+                    offset: const Offset(0, 2),
+                  )
+                ]
+              ),
+              // MUDANÇA 7: Ícone da seta com um tom de cinza quente
+              child: Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.grey[400]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
   Widget _buildStatsGrid() {
     final total = _cachedDeliveries?['total'] ?? 0;
     final completed = _cachedDeliveries?['completed'] ?? 0;

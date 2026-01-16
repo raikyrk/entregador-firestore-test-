@@ -84,4 +84,8 @@ Quando você fizer um flutter build apk e subir com:
 Bashshorebird release android
 Todos os entregadores recebem a nova versão em segundos!
 
+<<<<<<< HEAD
 Ao Gosto Carnes Nobres - 
+=======
+Ao Gosto Carnes Nobres - 
+>>>>>>> testes

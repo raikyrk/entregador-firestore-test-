@@ -30,14 +30,21 @@ android {
         applicationId = "com.aogosto.temp_project"
         minSdk = flutter.minSdkVersion
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.2.0"
+        
+        // === CORREÇÃO AUTOMÁTICA DE VERSÃO ===
+        // Agora o Android vai ler o número direto do pubspec.yaml
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+        // =====================================
+
         multiDexEnabled = true
     }
 
     buildTypes {
         getByName("release") {
-            signingConfig = signingConfigs.getByName("debug") // Substitua por uma signingConfig real para a Play Store
+            // Nota: Para publicar na PlayStore no futuro, você precisará de uma chave de assinatura real aqui.
+            // Por enquanto, usar a "debug" permite instalar manualmente (sideload).
+            signingConfig = signingConfigs.getByName("debug") 
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

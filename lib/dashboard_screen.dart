@@ -1,4 +1,4 @@
-// dashboard_screen.dart - DESIGN ULTIMATE & CLEAN
+// dashboard_screen.dart - PROFESSIONAL & ROBUST UI
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -24,22 +24,28 @@ class DashboardScreenState extends State<DashboardScreen>
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
-  // Cache e Variáveis
+  // Cache
   String? _cachedEntregadorName;
   Map<String, dynamic>? _cachedDeliveries;
   Map<String, String>? _cachedAverageTime;
   bool _isRefreshing = false;
 
+  // Cores da Marca (Profissional)
+  final Color primaryOrange = const Color(0xFFF28C38);
+  final Color deepOrange = const Color(0xFFE65100);
+  final Color darkText = const Color(0xFF1A202C);
+  final Color greyBackground = const Color(0xFFF7F9FC);
+
   @override
   void initState() {
     super.initState();
     _pulseController = AnimationController(
-      duration: const Duration(milliseconds: 2000), // Pulso mais lento e elegante
+      duration: const Duration(milliseconds: 2500),
       vsync: this,
     )..repeat(reverse: true);
     
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.15).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOutSine),
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.03).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOutQuad),
     );
     
     _loadCachedData();
@@ -51,8 +57,7 @@ class DashboardScreenState extends State<DashboardScreen>
     super.dispose();
   }
 
-  // ==================== LÓGICA DE BACKEND (MANTIDA) ====================
-
+  // --- LÓGICA (MANTIDA IGUAL) ---
   Future<void> _loadCachedData() async {
     await _getEntregadorName();
     await _getDailyDeliveries();
@@ -91,11 +96,11 @@ class DashboardScreenState extends State<DashboardScreen>
     setState(() => _isRefreshing = false);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Painel atualizado.', style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.black87,
+        content: const Text('Dados atualizados com sucesso.', style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: darkText,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        margin: const EdgeInsets.all(20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        margin: const EdgeInsets.all(16),
       ),
     );
   }
@@ -155,97 +160,59 @@ class DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  // === TEMPO MÉDIO (VERSÃO ROBUSTA E COM LOGS) ===
   Future<Map<String, String>> _getAverageDeliveryTime() async {
-    print('DEBUG: Iniciando cálculo de tempo médio...');
-    
     try {
       final prefs = await SharedPreferences.getInstance();
       final entregador = prefs.getString('entregador') ?? '';
-      
-      if (entregador.isEmpty) {
-        print('DEBUG: Entregador não identificado.');
-        return {'averageTime': '0 min', 'difference': '0 min'};
-      }
+      if (entregador.isEmpty) return {'averageTime': '0 min', 'difference': '0 min'};
 
       final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
       final yesterdayStr = DateFormat('yyyy-MM-dd').format(DateTime.now().subtract(const Duration(days: 1)));
 
-      // Função auxiliar interna
       Future<double> calculateAverageForDate(String dateStr) async {
-        // Cria o intervalo de data (Início e Fim do dia)
         final start = DateTime.parse('$dateStr 00:00:00');
         final end = DateTime.parse('$dateStr 23:59:59');
 
-        // Busca TODOS os pedidos concluídos deste entregador
         final snapshot = await FirebaseFirestore.instance
             .collection('pedidos')
             .where('entregador', isEqualTo: entregador)
             .where('status', isEqualTo: DeliveryStatus.concluido) 
             .get();
 
-        print('DEBUG: Encontrados ${snapshot.docs.length} pedidos concluídos no total (antes do filtro de data).');
-
-        // Filtra os pedidos do dia específico
         final deliveries = snapshot.docs.where((doc) {
           final data = doc.data();
-          
-          // Verifica se tem data de conclusão
-          if (!data.containsKey('data_conclusao') || data['data_conclusao'] == null) {
-            return false;
-          }
-
+          if (!data.containsKey('data_conclusao') || data['data_conclusao'] == null) return false;
           final ts = data['data_conclusao'] as Timestamp;
           final date = ts.toDate();
-          
-          // Verifica se está dentro do dia
           return date.isAfter(start) && date.isBefore(end);
         }).toList();
-
-        print('DEBUG: Para a data $dateStr, restaram ${deliveries.length} pedidos.');
 
         if (deliveries.isEmpty) return 0.0;
 
         double totalMinutos = 0.0;
-        
         for (var doc in deliveries) {
           final data = doc.data();
           double minutosDoPedido = 0.0;
-
-          // --- LÓGICA DE CONVERSÃO SEGURA ---
           if (data.containsKey('duracao_minutos') && data['duracao_minutos'] != null) {
             final valor = data['duracao_minutos'];
-            if (valor is int) {
-              minutosDoPedido = valor.toDouble();
-            } else if (valor is double) {
-              minutosDoPedido = valor;
-            } else if (valor is String) {
-              minutosDoPedido = double.tryParse(valor) ?? 0.0;
-            }
+            if (valor is int) minutosDoPedido = valor.toDouble();
+            else if (valor is double) minutosDoPedido = valor;
+            else if (valor is String) minutosDoPedido = double.tryParse(valor) ?? 0.0;
           }
-          // ----------------------------------
-          
-          print('DEBUG: Pedido ${doc.id} levou $minutosDoPedido min');
           totalMinutos += minutosDoPedido;
         }
-
-        final media = totalMinutos / deliveries.length;
-        print('DEBUG: Média para $dateStr: $media');
-        return media;
+        return totalMinutos / deliveries.length;
       }
 
-      // Executa para hoje e ontem
       final [todayAvg, yesterdayAvg] = await Future.wait([
         calculateAverageForDate(todayStr),
         calculateAverageForDate(yesterdayStr),
       ]);
 
-      // Formatação da String (ex: 1h 20m ou 80 min)
       final avgStr = todayAvg >= 60
           ? '${(todayAvg / 60).floor()}h ${(todayAvg % 60).round()}m'
           : '${todayAvg.round()} min';
 
-      // Cálculo da diferença
       final diff = todayAvg - yesterdayAvg;
       final diffStr = diff == 0
           ? '0 min'
@@ -254,378 +221,334 @@ class DashboardScreenState extends State<DashboardScreen>
               : '${diff > 0 ? '+' : '-'}${diff.abs().round()} min';
 
       final result = {'averageTime': avgStr, 'difference': diffStr};
-      
-      // Atualiza o cache
       _cachedAverageTime = result;
-      
       return result;
-
-    } catch (e, stack) {
-      print('ERRO CRÍTICO NO CÁLCULO DE TEMPO: $e');
-      print(stack);
-      return {'averageTime': 'Erro', 'difference': '-'};
+    } catch (e) {
+      return {'averageTime': '-', 'difference': '-'};
     }
   }
-  // ==================== UI ULTIMATE ====================
+
+  // ==================== UI CONSTRUÇÃO ====================
 
   @override
   Widget build(BuildContext context) {
-    // Paleta de Cores Premium
-    const Color bgBase = Color(0xFFF9FAFB); // Cinza muito leve
-    const Color orangePrimary = Color(0xFFFF6B00); // Laranja Vibrante
-    const Color textDark = Color(0xFF1F2937);
-
     return Scaffold(
-      backgroundColor: bgBase,
+      backgroundColor: greyBackground,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _refreshDashboard,
-          color: orangePrimary,
+          color: primaryOrange,
           child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 10.0),
+            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 1. Cabeçalho Minimalista
-                const SizedBox(height: 10),
-                _buildCustomHeader(textDark),
+                _buildHeader(),
                 
-                const SizedBox(height: 32),
-                
-                // 2. O Grande Botão (Hero Section)
-                _buildHeroScanner(orangePrimary),
-                
-                const SizedBox(height: 32),
-                
-                // 3. Label de Seção
-                Text(
-                  'Visão Geral',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: textDark.withOpacity(0.8),
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                
-                // === [NOVO] Card Painel de Entregas ===
-                _buildDeliveryPanelCard(),
-                
-                // 4. Grid de Estatísticas (Cards Flutuantes)
-                _buildStatsGrid(),
-                
-                const SizedBox(height: 20),
-                
-                // 5. Card de Performance Dark
-                _buildPerformanceCard(),
-                
-                const SizedBox(height: 30),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCustomHeader(Color textColor) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Bom trabalho,',
-              style: TextStyle(
-                fontSize: 15,
-                color: Colors.grey[500],
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _cachedEntregadorName?.split(' ').first ?? 'Parceiro',
-              style: TextStyle(
-                fontSize: 32,
-                color: textColor,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -1.0,
-              ),
-            ),
-          ],
-        ),
-        // Botão de Sair discreto e elegante
-        _BouncyButton(
-          onTap: () => _logout(context),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Icon(Icons.logout_rounded, color: Colors.grey[400], size: 22),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildHeroScanner(Color primaryColor) {
-    return _BouncyButton(
-      onTap: () async {
-        await _writeLog('Botão Scanner Pressionado');
-        if (!Platform.isAndroid && !Platform.isIOS) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Disponível apenas no Mobile')));
-          return;
-        }
-        final result = await Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const ScannerScreen()),
-        );
-        if (result == true || result == 'refresh') await _refreshDashboard();
-      },
-      child: Container(
-        height: 280, // Card alto e imponente
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [primaryColor, primaryColor.withRed(255).withGreen(140)], // Gradiente sutil
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(32),
-          boxShadow: [
-            BoxShadow(
-              color: primaryColor.withOpacity(0.4),
-              blurRadius: 30,
-              offset: const Offset(0, 15), // Sombra colorida "Glow"
-            ),
-          ],
-        ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // Background Decorativo (Círculos abstratos)
-            Positioned(
-              top: -50,
-              right: -50,
-              child: Container(
-                width: 200,
-                height: 200,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.1),
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: -20,
-              left: -20,
-              child: Container(
-                width: 150,
-                height: 150,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.1),
-                ),
-              ),
-            ),
-
-            // Conteúdo Centralizado Real
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ScaleTransition(
-                  scale: _pulseAnimation,
-                  child: Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 20,
-                          spreadRadius: 5,
-                        )
-                      ],
-                    ),
-                    child: Icon(
-                      Icons.qr_code_scanner_rounded, // Ícone moderno
-                      size: 48,
-                      color: primaryColor,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  'Escanear Pedido',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Icon(Icons.touch_app_rounded, color: Colors.white, size: 16),
-                      SizedBox(width: 8),
-                      Text(
-                        'Toque para abrir a câmera',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
+                      const SizedBox(height: 24),
+                      
+                      // Scanner Principal
+                      _buildMainScanner(),
+                      
+                      const SizedBox(height: 32),
+                      
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Painel de Controle', 
+                            style: TextStyle(
+                              fontSize: 18, 
+                              fontWeight: FontWeight.w800, 
+                              color: darkText,
+                              letterSpacing: -0.5
+                            )
+                          ),
+                          Icon(Icons.bar_chart_rounded, color: Colors.grey[400], size: 20),
+                        ],
                       ),
+                      
+                      const SizedBox(height: 16),
+                      
+                      // Card de Navegação para Entregas (O MAIS IMPORTANTE)
+                      _buildDeliveriesAccessCard(),
+                      
+                      const SizedBox(height: 16),
+                      
+                      // Grid de Estatísticas
+                      _buildStatsRow(),
+                      
+                      const SizedBox(height: 24),
+                      
+                      // Card de Performance Dark
+                      _buildPerformanceCard(),
+                      
+                      const SizedBox(height: 40),
                     ],
                   ),
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(32)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Olá, Parceiro',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[500],
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _cachedEntregadorName?.split(' ').first ?? 'Entregador',
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  color: darkText,
+                  letterSpacing: -1,
+                ),
+              ),
+            ],
+          ),
+          _BouncyButton(
+            onTap: () => _logout(context),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: greyBackground,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.grey[200]!),
+              ),
+              child: Icon(Icons.logout_rounded, color: Colors.grey[600], size: 22),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMainScanner() {
+    return _BouncyButton(
+      onTap: () async {
+        await _writeLog('Botão Scanner Pressionado');
+        if (!Platform.isAndroid && !Platform.isIOS) return;
+        final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen()));
+        if (result == true || result == 'refresh') await _refreshDashboard();
+      },
+      child: Container(
+        height: 200,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [primaryOrange, deepOrange],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: primaryOrange.withOpacity(0.4),
+              blurRadius: 25,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            // Elementos decorativos de fundo (Círculos sutis)
+            Positioned(
+              right: -40,
+              top: -40,
+              child: Container(
+                width: 180, height: 180,
+                decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), shape: BoxShape.circle),
+              ),
+            ),
+            Positioned(
+              left: 20,
+              bottom: -60,
+              child: Container(
+                width: 140, height: 140,
+                decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), shape: BoxShape.circle),
+              ),
+            ),
+            
+            // Conteúdo
+            Align(
+              alignment: Alignment.center,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ScaleTransition(
+                    scale: _pulseAnimation,
+                    child: Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 15,
+                            spreadRadius: 2,
+                          )
+                        ],
+                      ),
+                      // Ícone seguro e profissional
+                      child: Icon(Icons.qr_code_scanner, color: primaryOrange, size: 38),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Escaneia ai Lenda!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text(
+                      'Toque para escanear',
+                      style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  // === NOVO WIDGET: CARD PAINEL DE ENTREGAS ===
-  Widget _buildDeliveryPanelCard() {
-    // Definindo as cores locais para este card para garantir a harmonia
-    const Color orangePrimary = Color(0xFFFF6B00);
-    // Um tom muito sutil de laranja para o fundo do card, quase um creme
-    const Color vibrantOrangeSurface = Color(0xFFFFF3EB); 
-
+  Widget _buildDeliveriesAccessCard() {
+    // Card Branco Sólido com Sombra Forte - Estilo Profissional
     return _BouncyButton(
       onTap: () {
-        Navigator.push(
-          context,
-          // Supondo que initialTabIndex: 0 seja a aba de "Todos" ou "Pendentes"
-          MaterialPageRoute(builder: (context) => const DeliveriesScreen(initialTabIndex: 0)),
-        );
+        Navigator.push(context, MaterialPageRoute(builder: (context) => const DeliveriesScreen(initialTabIndex: 0)));
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          // MUDANÇA 1: Cor de fundo tingida de laranja claro em vez de branco puro
-          color: vibrantOrangeSurface,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(24),
-          // MUDANÇA 2: Borda sutil na cor laranja principal
-          border: Border.all(color: orangePrimary.withOpacity(0.15), width: 1.5),
+          border: Border.all(color: Colors.grey.shade100, width: 1),
           boxShadow: [
             BoxShadow(
-              // MUDANÇA 3: Sombra levemente alaranjada para um "glow" quente e sutil
-              color: orangePrimary.withOpacity(0.08),
-              blurRadius: 25,
+              color: Colors.grey.withOpacity(0.08),
+              blurRadius: 20,
               offset: const Offset(0, 8),
-              spreadRadius: 0,
             ),
           ],
         ),
         child: Row(
           children: [
-            // Ícone com fundo Laranja mais forte que o card
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                // MUDANÇA 4: Fundo do ícone com mais opacidade para destaque
-                color: orangePrimary.withOpacity(0.15), 
-                shape: BoxShape.circle,
+                color: const Color(0xFFFFF3E0), // Laranja bem claro
+                borderRadius: BorderRadius.circular(16),
               ),
-              child: const Icon(
-                Icons.dashboard_customize_rounded, 
-                // MUDANÇA 5: Ícone na cor laranja vibrante principal
-                color: orangePrimary, 
-                size: 24
-              ),
+              child: Icon(Icons.list_alt, color: deepOrange, size: 28), // Ícone Seguro
             ),
-            const SizedBox(width: 16),
-            const Expanded(
+            const SizedBox(width: 18),
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'Painel de Entregas',
                     style: TextStyle(
-                      fontSize: 24,
+                      fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      // Mantemos o texto escuro para contraste
-                      color: Color(0xFF1F2937), 
+                      color: darkText,
                     ),
                   ),
-                  SizedBox(height: 2),
-                  
-                  
+                  const SizedBox(height: 4),
+                  Text(
+                    'Visualizar e gerenciar histórico',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey[500],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ],
               ),
             ),
-            // Seta indicativa
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                // MUDANÇA 6: Fundo branco para a seta "saltar" do fundo laranja claro
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.03),
-                    blurRadius: 5,
-                    offset: const Offset(0, 2),
-                  )
-                ]
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(10),
               ),
-              // MUDANÇA 7: Ícone da seta com um tom de cinza quente
-              child: Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.grey[400]),
+              child: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey[400]),
             ),
           ],
         ),
       ),
     );
   }
-  
-  Widget _buildStatsGrid() {
+
+  Widget _buildStatsRow() {
     final total = _cachedDeliveries?['total'] ?? 0;
     final completed = _cachedDeliveries?['completed'] ?? 0;
 
     return Row(
       children: [
         Expanded(
-          child: _StatCardClean(
-            title: 'Total Hoje',
-            value: '$total',
+          child: _StatCard(
+            label: 'Total Hoje',
+            value: total.toString(),
             icon: Icons.local_shipping_outlined,
-            accentColor: const Color(0xFF3B82F6), // Azul
+            color: const Color(0xFF2196F3),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DeliveriesScreen(initialTabIndex: 0))),
           ),
         ),
         const SizedBox(width: 16),
         Expanded(
-          child: _StatCardClean(
-            title: 'Concluídas',
-            value: '$completed',
-            icon: Icons.check_circle_outline_rounded,
-            accentColor: const Color(0xFF10B981), // Verde
+          child: _StatCard(
+            label: 'Concluídas',
+            value: completed.toString(),
+            icon: Icons.check_circle_outline,
+            color: const Color(0xFF4CAF50),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DeliveriesScreen(initialTabIndex: 1))),
           ),
         ),
@@ -638,16 +561,15 @@ class DashboardScreenState extends State<DashboardScreen>
     final avgTime = data['averageTime']!;
     final difference = data['difference']!;
     final isImprovement = difference.startsWith('-') && difference != '0 min';
-    
+
     return Container(
-      width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: const Color(0xFF27272A), // Quase preto (Zinc 800)
+        color: darkText,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: darkText.withOpacity(0.3),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),
@@ -659,9 +581,9 @@ class DashboardScreenState extends State<DashboardScreen>
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Tempo Médio',
-                style: TextStyle(color: Colors.grey, fontSize: 14),
+                style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 8),
               Text(
@@ -679,23 +601,29 @@ class DashboardScreenState extends State<DashboardScreen>
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: isImprovement 
-                  ? const Color(0xFF10B981).withOpacity(0.2) // Verde bg
-                  : const Color(0xFFEF4444).withOpacity(0.2), // Vermelho bg
+                  ? const Color(0xFF4CAF50).withOpacity(0.2) 
+                  : const Color(0xFFF44336).withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isImprovement 
+                  ? const Color(0xFF4CAF50).withOpacity(0.3) 
+                  : const Color(0xFFF44336).withOpacity(0.3),
+              ),
             ),
             child: Row(
               children: [
                 Icon(
                   isImprovement ? Icons.trending_down : Icons.trending_up,
-                  color: isImprovement ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-                  size: 20,
+                  color: isImprovement ? const Color(0xFF4CAF50) : const Color(0xFFF44336),
+                  size: 18,
                 ),
                 const SizedBox(width: 6),
                 Text(
                   difference.replaceAll('0 min', '--'),
                   style: TextStyle(
-                    color: isImprovement ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                    color: isImprovement ? const Color(0xFF4CAF50) : const Color(0xFFF44336),
                     fontWeight: FontWeight.bold,
+                    fontSize: 14
                   ),
                 ),
               ],
@@ -707,21 +635,20 @@ class DashboardScreenState extends State<DashboardScreen>
   }
 }
 
-// ==================== WIDGETS AUXILIARES ====================
+// === WIDGETS REUTILIZÁVEIS ===
 
-// Card de Estatística Minimalista
-class _StatCardClean extends StatelessWidget {
-  final String title;
+class _StatCard extends StatelessWidget {
+  final String label;
   final String value;
   final IconData icon;
-  final Color accentColor;
+  final Color color;
   final VoidCallback onTap;
 
-  const _StatCardClean({
-    required this.title,
+  const _StatCard({
+    required this.label,
     required this.value,
     required this.icon,
-    required this.accentColor,
+    required this.color,
     required this.onTap,
   });
 
@@ -733,12 +660,12 @@ class _StatCardClean extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
               color: Colors.grey.withOpacity(0.06),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
             ),
           ],
         ),
@@ -748,27 +675,27 @@ class _StatCardClean extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: accentColor.withOpacity(0.1),
-                shape: BoxShape.circle,
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: accentColor, size: 22),
+              child: Icon(icon, color: color, size: 22),
             ),
             const SizedBox(height: 16),
             Text(
               value,
               style: const TextStyle(
-                fontSize: 28,
+                fontSize: 24,
                 fontWeight: FontWeight.w800,
-                color: Color(0xFF1F2937),
+                color: Color(0xFF1A202C),
               ),
             ),
             const SizedBox(height: 4),
             Text(
-              title,
+              label,
               style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[400],
-                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                color: Colors.grey[500],
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
@@ -778,13 +705,10 @@ class _StatCardClean extends StatelessWidget {
   }
 }
 
-// Widget de animação de toque (Bounce Effect)
 class _BouncyButton extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
-
   const _BouncyButton({required this.child, required this.onTap});
-
   @override
   _BouncyButtonState createState() => _BouncyButtonState();
 }
@@ -797,9 +721,7 @@ class _BouncyButtonState extends State<_BouncyButton> with SingleTickerProviderS
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 100));
-    _scale = Tween<double>(begin: 1.0, end: 0.96).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _scale = Tween<double>(begin: 1.0, end: 0.96).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override

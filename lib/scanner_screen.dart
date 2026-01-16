@@ -109,7 +109,7 @@ class DeliveryService {
     }
   }
 
-  /// Envia SMS "Saiu pra entrega"
+  /*// Envia SMS "Saiu pra entrega"
   static Future<void> enviarMensagemSaiuPraEntrega(String? phoneNumber) async {
     if (phoneNumber == null || phoneNumber == 'N/A' || phoneNumber.trim().isEmpty) return;
 
@@ -138,7 +138,8 @@ class DeliveryService {
     }
   }
 }
-
+*/
+}
 
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({super.key});
@@ -278,7 +279,7 @@ class _ScannerScreenState extends State<ScannerScreen> with TickerProviderStateM
     if (mounted) Navigator.pop(context, true);
 
     
-    DeliveryService.enviarMensagemSaiuPraEntrega(result['phone']);
+    //DeliveryService.enviarMensagemSaiuPraEntrega(result['phone']);
   }
 
   String? _extractId(String url) {

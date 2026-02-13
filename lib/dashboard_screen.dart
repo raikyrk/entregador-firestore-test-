@@ -319,7 +319,7 @@ class DashboardScreenState extends State<DashboardScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Olá, Parceiro',
+                'v1.0.0',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -327,6 +327,7 @@ class DashboardScreenState extends State<DashboardScreen>
                   letterSpacing: 0.5,
                 ),
               ),
+              
               const SizedBox(height: 4),
               Text(
                 _cachedEntregadorName?.split(' ').first ?? 'Entregador',

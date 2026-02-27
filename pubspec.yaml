@@ -32,7 +32,8 @@ dependencies:
   location: ^7.0.0
   flutter_dotenv: ^5.0.2
   firebase_core: ^3.15.2
-  cloud_firestore: ^5.0.1
+
+  cloud_firestore: ^5.4.4
 
   # SHOREBIRD CORRETO (esse é o oficial!)
   shorebird_code_push: ^1.0.2

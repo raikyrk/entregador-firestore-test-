@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../constants/delivery_status.dart'; // Ajuste o caminho se necessário
+import '../constants/delivery_status.dart';
 
 class DeliveryController extends ChangeNotifier {
   static final DeliveryController instance = DeliveryController._internal();
@@ -30,15 +30,13 @@ class DeliveryController extends ChangeNotifier {
   StreamSubscription? _completedSub;
 
   Future<void> initialize() async {
-    isLoading = true;
+    // Começa sempre como true para não mostrar lixo na tela
+    isLoading = true; 
     notifyListeners();
 
     final prefs = await SharedPreferences.getInstance();
     entregadorName = prefs.getString('entregador') ?? '';
     
-    // AVISA A TELA PARA MOSTRAR O NOME NA HORA!
-    notifyListeners(); 
-
     if (entregadorName.isEmpty) {
       isLoading = false;
       errorMessage = 'Entregador não logado';
@@ -56,6 +54,8 @@ class DeliveryController extends ChangeNotifier {
   void setDateRange(DateTime start, DateTime end) {
     startDate = DateTime(start.year, start.month, start.day);
     endDate = DateTime(end.year, end.month, end.day, 23, 59, 59);
+    isLoading = true; // Volta a carregar ao mudar a data
+    notifyListeners();
     _listenToCompleted();
   }
 
@@ -80,10 +80,8 @@ class DeliveryController extends ChangeNotifier {
           }).toList();
           
           _calculateMetrics();
-          isLoading = false;
+          isLoading = false; 
           notifyListeners(); 
-    }, onError: (e) {
-      debugPrint("Erro Pendentes: $e");
     });
 
     _listenToCompleted();
@@ -93,20 +91,17 @@ class DeliveryController extends ChangeNotifier {
     final firestore = FirebaseFirestore.instance;
     _completedSub?.cancel();
 
-    // REMOVEMOS O FILTRO DE DATA DAQUI PARA NÃO DAR ERRO DE ÍNDICE NO FIREBASE
     _completedSub = firestore.collection('pedidos')
         .where('entregador', isEqualTo: entregadorName)
         .where('status', isEqualTo: DeliveryStatus.concluido)
         .snapshots().listen((snapshot) {
           
           final List<Map<String, dynamic>> filteredList = [];
-          
           for (var doc in snapshot.docs) {
             final data = doc.data();
             final ts = data['data_conclusao'] as Timestamp?;
             if (ts == null) continue;
             
-            // FAZEMOS O FILTRO DE DATA AQUI NO APLICATIVO
             final date = ts.toDate();
             if (date.isAfter(startDate) && date.isBefore(endDate)) {
               data['id'] = doc.id;
@@ -118,10 +113,8 @@ class DeliveryController extends ChangeNotifier {
 
           completedDeliveries = filteredList;
           _calculateMetrics();
-          isLoading = false;
+          isLoading = false; 
           notifyListeners(); 
-    }, onError: (e) {
-      debugPrint("Erro Concluídos: $e"); // Se der erro, vai mostrar no console do VS Code
     });
   }
 
@@ -145,7 +138,6 @@ class DeliveryController extends ChangeNotifier {
       final ts = d['data_conclusao'] as Timestamp?;
       if (ts == null) continue;
       final date = ts.toDate();
-      
       ganhosConcluidos += (d['taxa_entrega'] as double);
 
       if (date.isAfter(todayStart)) {
@@ -178,18 +170,14 @@ class DeliveryController extends ChangeNotifier {
         : '${diff > 0 ? '+' : '-'}${diff.abs().round()} min';
   }
 
- Future<void> markAsCompleted(String id) async {
+  Future<void> markAsCompleted(String id) async {
     final docRef = FirebaseFirestore.instance.collection('pedidos').doc(id);
     final doc = await docRef.get();
     if (!doc.exists) return;
-
     final data = doc.data()!;
     final atribuicao = data['timestamp_atribuicao'] as Timestamp?;
     if (atribuicao == null) return;
-
     final duracao = DateTime.now().difference(atribuicao.toDate());
-    
-    // Atualiza apenas no banco de dados, sem enviar mensagem!
     await docRef.update({
       'status': DeliveryStatus.concluido,
       'data_conclusao': FieldValue.serverTimestamp(),
@@ -210,5 +198,7 @@ class DeliveryController extends ChangeNotifier {
     _completedSub?.cancel();
     pendingDeliveries.clear();
     completedDeliveries.clear();
+    entregadorName = '';
+    notifyListeners();
   }
 }

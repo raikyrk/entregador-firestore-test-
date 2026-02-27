@@ -6,8 +6,11 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http; 
 import 'dart:convert'; 
+
+// Importações do seu projeto
 import 'main.dart'; 
 import 'dashboard_screen.dart';
+import 'controllers/delivery_controller.dart'; // IMPORTANTE: Para resetar os dados no login
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -35,7 +38,7 @@ class LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  
+  // === LÓGICA DE LOGIN CORRIGIDA ===
   Future<void> _login() async {
     setState(() {
       _errorMessage = null;
@@ -50,7 +53,7 @@ class LoginScreenState extends State<LoginScreen> {
     }
 
     try {
-      
+      // 1. Busca o entregador pelo PIN (ID do documento)
       final doc = await FirebaseFirestore.instance
           .collection('entregadores')
           .doc(pin)
@@ -65,6 +68,7 @@ class LoginScreenState extends State<LoginScreen> {
 
       final data = doc.data()!;
       final nomeEntregador = data['nome']?.toString().trim();
+      
       if (nomeEntregador == null || nomeEntregador.isEmpty) {
         setState(() {
           _errorMessage = 'Erro: Nome do entregador não encontrado.';
@@ -72,25 +76,30 @@ class LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      
+      // 2. Salva o novo nome localmente
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('entregador', nomeEntregador);
 
+      // 3. ATENÇÃO AQUI: Reinicializa o Controller com os dados do NOVO entregador
+      // Isso cancela os streams da conta antiga e assina os da nova conta.
+      await DeliveryController.instance.initialize();
+
       if (!mounted) return;
 
-      
+      // 4. Vai para o Dashboard com tudo limpo e atualizado
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const DashboardScreen()),
       );
     } catch (e) {
       setState(() {
-        _errorMessage = 'Erro de conexão. Tente novamente.';
+        _errorMessage = 'Erro de conexão ou no servidor. Tente novamente.';
       });
+      debugPrint("Erro no Login: $e");
     }
   }
 
-  
+  // === VERIFICAÇÃO DE ATUALIZAÇÃO (MANTIDA IGUAL) ===
   Future<void> _verificarAtualizacao() async {
     try {
       final baseUrl = dotenv.env['API_BASE_URL'] ?? '';
@@ -128,7 +137,7 @@ class LoginScreenState extends State<LoginScreen> {
           canPop: false,
           child: AlertDialog(
             title: const Text('Atualização Obrigatória'),
-            content: Text('Nova versão ($ultimaVersao) disponível! Atualize agora.'),
+            content: Text('Nova versão ($ultimaVersao) disponível! Atualize agora para continuar.'),
             actions: [
               TextButton(
                 onPressed: () async {
@@ -144,7 +153,7 @@ class LoginScreenState extends State<LoginScreen> {
         ),
       );
     } catch (e) {
-      // Erro silencioso
+      // Falha na rede não deve travar o login
     }
   }
 
@@ -153,7 +162,7 @@ class LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: Center(
-        child: Padding(
+        child: SingleChildScrollView( // Evita erro de teclado cobrindo a tela
           padding: const EdgeInsets.all(24.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -206,7 +215,7 @@ class LoginScreenState extends State<LoginScreen> {
 
               const SizedBox(height: 32),
 
-              // Botão Entrar
+              // Botão Entrar (Usando o widget de animação do main.dart)
               AnimatedScaleButton(
                 onPressed: _login,
                 child: const Text(

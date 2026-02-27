@@ -1,12 +1,9 @@
 // dashboard_screen.dart
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io' show Platform;
-
 import 'controllers/delivery_controller.dart';
-import 'login_screen.dart';
-import 'scanner_screen.dart';
 import 'deliveries_screen.dart';
+import 'scanner_screen.dart';
 import 'widgets/bouncy_button.dart';
 import 'widgets/stat_card.dart';
 
@@ -28,30 +25,14 @@ class DashboardScreenState extends State<DashboardScreen> with TickerProviderSta
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
-      duration: const Duration(milliseconds: 2500),
-      vsync: this,
-    )..repeat(reverse: true);
-    
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.03).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOutQuad),
-    );
+    _pulseController = AnimationController(duration: const Duration(milliseconds: 2500), vsync: this)..repeat(reverse: true);
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.03).animate(CurvedAnimation(parent: _pulseController, curve: Curves.easeInOutQuad));
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
     super.dispose();
-  }
-
-  Future<void> _logout(BuildContext context) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('entregador');
-    DeliveryController.instance.logout();
-    if (!context.mounted) return; // Proteção do Flutter
-    Navigator.pushAndRemoveUntil(
-      context, MaterialPageRoute(builder: (context) => const LoginScreen()), (route) => false,
-    );
   }
 
   @override
@@ -75,20 +56,26 @@ class DashboardScreenState extends State<DashboardScreen> with TickerProviderSta
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         const SizedBox(height: 24),
-                        _buildMainScanner(context), // Passando context
+                        _buildMainScanner(context),
                         const SizedBox(height: 32),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('Painel de Controle', 
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: darkText, letterSpacing: -0.5)
-                            ),
+                            Text('Painel de Controle', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: darkText, letterSpacing: -0.5)),
                             Icon(Icons.bar_chart_rounded, color: Colors.grey[400], size: 20),
                           ],
                         ),
                         const SizedBox(height: 16),
                         _buildDeliveriesAccessCard(context),
                         const SizedBox(height: 16),
+                        
+                        // SE ESTIVER CARREGANDO, MOSTRA UM CARREGAMENTO EM CIMA DOS CARDS
+                        if (ctrl.isLoading)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 20),
+                            child: Center(child: LinearProgressIndicator(color: Color(0xFFF28C38), backgroundColor: Colors.transparent)),
+                          ),
+
                         _buildStatsRow(context, ctrl),
                         const SizedBox(height: 24),
                         _buildPerformanceCard(ctrl),
@@ -105,13 +92,19 @@ class DashboardScreenState extends State<DashboardScreen> with TickerProviderSta
     );
   }
 
-  Widget _buildHeader(String name) {
+Widget _buildHeader(String name) {
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(32)),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 20, offset: const Offset(0, 10))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03), 
+            blurRadius: 20, 
+            offset: const Offset(0, 10)
+          )
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -119,21 +112,36 @@ class DashboardScreenState extends State<DashboardScreen> with TickerProviderSta
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('v1.0.0', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey[500], letterSpacing: 0.5)),
+              Text(
+                'v1.0.1', 
+                style: TextStyle(
+                  fontSize: 14, 
+                  fontWeight: FontWeight.w600, 
+                  color: Colors.grey[500], 
+                  letterSpacing: 0.5
+                )
+              ),
               const SizedBox(height: 4),
               Text(
                 name.isNotEmpty ? name.split(' ').first : 'Carregando...',
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: darkText, letterSpacing: -1),
+                style: TextStyle(
+                  fontSize: 26, 
+                  fontWeight: FontWeight.w900, 
+                  color: darkText, 
+                  letterSpacing: -1
+                ),
               ),
             ],
           ),
-          BouncyButton(
-            onTap: () => _logout(context),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: greyBackground, borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.grey[200]!)),
-              child: Icon(Icons.logout_rounded, color: Colors.grey[600], size: 22),
+          // Removido o botão de logout. 
+          // Mantemos um ícone decorativo ou apenas o espaço para manter o alinhamento.
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: primaryOrange.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
             ),
+            child: Icon(Icons.person_rounded, color: primaryOrange, size: 22),
           ),
         ],
       ),
@@ -142,10 +150,9 @@ class DashboardScreenState extends State<DashboardScreen> with TickerProviderSta
 
   Widget _buildMainScanner(BuildContext context) {
     return BouncyButton(
-      onTap: () async {
+      onTap: () {
         if (!Platform.isAndroid && !Platform.isIOS) return;
-        final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen()));
-        // Não precisamos mais fazer fetch manual! O Controller escuta o Firebase automaticamente.
+        Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen()));
       },
       child: Container(
         height: 200, width: double.infinity,
@@ -163,20 +170,15 @@ class DashboardScreenState extends State<DashboardScreen> with TickerProviderSta
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  ScaleTransition(
-                    scale: _pulseAnimation,
-                    child: Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 15, spreadRadius: 2)]),
+                  ScaleTransition(scale: _pulseAnimation,
+                    child: Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 15, spreadRadius: 2)]),
                       child: Icon(Icons.qr_code_scanner, color: primaryOrange, size: 38),
                     ),
                   ),
                   const SizedBox(height: 20),
                   const Text('Escaneia ai Lenda!', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: -0.5)),
                   const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
+                  Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
                     child: const Text('Toque para escanear', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
                   ),
                 ],
@@ -193,22 +195,17 @@ class DashboardScreenState extends State<DashboardScreen> with TickerProviderSta
       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const DeliveriesScreen(initialTabIndex: 0))),
       child: Container(
         padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.grey.shade100, width: 1),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.grey.shade100, width: 1),
           boxShadow: [BoxShadow(color: Colors.grey.withValues(alpha: 0.08), blurRadius: 20, offset: const Offset(0, 8))],
         ),
         child: Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: const Color(0xFFFFF3E0), borderRadius: BorderRadius.circular(16)),
+            Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: const Color(0xFFFFF3E0), borderRadius: BorderRadius.circular(16)),
               child: Icon(Icons.list_alt, color: deepOrange, size: 28),
             ),
             const SizedBox(width: 18),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Painel de Entregas', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: darkText)),
                   const SizedBox(height: 4),
@@ -216,9 +213,7 @@ class DashboardScreenState extends State<DashboardScreen> with TickerProviderSta
                 ],
               ),
             ),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: Colors.grey[50], borderRadius: BorderRadius.circular(10)),
+            Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.grey[50], borderRadius: BorderRadius.circular(10)),
               child: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey[400]),
             ),
           ],
@@ -233,7 +228,7 @@ class DashboardScreenState extends State<DashboardScreen> with TickerProviderSta
         Expanded(
           child: StatCard(
             label: 'Total Hoje',
-            value: ctrl.totalHoje.toString(),
+            value: ctrl.isLoading ? '...' : ctrl.totalHoje.toString(),
             icon: Icons.local_shipping_outlined,
             color: const Color(0xFF2196F3),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DeliveriesScreen(initialTabIndex: 0))),
@@ -243,7 +238,7 @@ class DashboardScreenState extends State<DashboardScreen> with TickerProviderSta
         Expanded(
           child: StatCard(
             label: 'Concluídas',
-            value: ctrl.concluidasHoje.toString(),
+            value: ctrl.isLoading ? '...' : ctrl.concluidasHoje.toString(),
             icon: Icons.check_circle_outline,
             color: const Color(0xFF4CAF50),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DeliveriesScreen(initialTabIndex: 1))),
@@ -259,42 +254,34 @@ class DashboardScreenState extends State<DashboardScreen> with TickerProviderSta
 
     return Container(
       padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: darkText, borderRadius: BorderRadius.circular(24),
+      decoration: BoxDecoration(color: darkText, borderRadius: BorderRadius.circular(24),
         boxShadow: [BoxShadow(color: darkText.withValues(alpha: 0.3), blurRadius: 20, offset: const Offset(0, 10))],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Column(crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Tempo Médio', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
-              Text(ctrl.tempoMedioStr, style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: -1)),
+              Text(ctrl.isLoading ? '...' : ctrl.tempoMedioStr, style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: -1)),
             ],
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: isImprovement ? const Color(0xFF4CAF50).withValues(alpha: 0.2) : const Color(0xFFF44336).withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: isImprovement ? const Color(0xFF4CAF50).withValues(alpha: 0.3) : const Color(0xFFF44336).withValues(alpha: 0.3)),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  isImprovement ? Icons.trending_down : Icons.trending_up,
-                  color: isImprovement ? const Color(0xFF4CAF50) : const Color(0xFFF44336), size: 18,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  difference.replaceAll('0 min', '--'),
-                  style: TextStyle(color: isImprovement ? const Color(0xFF4CAF50) : const Color(0xFFF44336), fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-              ],
-            ),
-          )
+          if (!ctrl.isLoading)
+            Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: isImprovement ? const Color(0xFF4CAF50).withValues(alpha: 0.2) : const Color(0xFFF44336).withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: isImprovement ? const Color(0xFF4CAF50).withValues(alpha: 0.3) : const Color(0xFFF44336).withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(isImprovement ? Icons.trending_down : Icons.trending_up, color: isImprovement ? const Color(0xFF4CAF50) : const Color(0xFFF44336), size: 18),
+                  const SizedBox(width: 6),
+                  Text(difference.replaceAll('0 min', '--'), style: TextStyle(color: isImprovement ? const Color(0xFF4CAF50) : const Color(0xFFF44336), fontWeight: FontWeight.bold, fontSize: 14)),
+                ],
+              ),
+            )
         ],
       ),
     );

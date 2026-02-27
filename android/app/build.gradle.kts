@@ -1,3 +1,5 @@
+// android/app/build.gradle.kts
+
 plugins {
     id("com.android.application")
     // START: FlutterFire Configuration
@@ -9,10 +11,14 @@ plugins {
 
 android {
     namespace = "com.aogosto.temp_project"
-    compileSdk = 36
+    
+    // OBRIGATÓRIO: Versão 36 ou superior exigida pelas novas bibliotecas AndroidX
+    compileSdk = 36 
+    
     ndkVersion = "27.0.12077973"
 
     compileOptions {
+        // Java 17 é necessário para compatibilidade com Gradle 8.11.1
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
         isCoreLibraryDesugaringEnabled = true
@@ -29,21 +35,20 @@ android {
     defaultConfig {
         applicationId = "com.aogosto.temp_project"
         minSdk = flutter.minSdkVersion
-        targetSdk = 35
         
-        // === CORREÇÃO AUTOMÁTICA DE VERSÃO ===
-        // Agora o Android vai ler o número direto do pubspec.yaml
+        // Mantido em 35 para estabilidade de comportamento em tempo de execução
+        targetSdk = 35 
+        
+        // Sincroniza versão com o pubspec.yaml
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        // =====================================
 
         multiDexEnabled = true
     }
 
     buildTypes {
         getByName("release") {
-            // Nota: Para publicar na PlayStore no futuro, você precisará de uma chave de assinatura real aqui.
-            // Por enquanto, usar a "debug" permite instalar manualmente (sideload).
+            // Usando configuração de debug para permitir instalação manual (sideload)
             signingConfig = signingConfigs.getByName("debug") 
             isMinifyEnabled = true
             isShrinkResources = true
@@ -61,14 +66,19 @@ repositories {
 }
 
 dependencies {
+    // Suporte para múltiplas bibliotecas e futures
     implementation("androidx.multidex:multidex:2.0.1")
     implementation("androidx.concurrent:concurrent-futures:1.1.0")
+    
+    // Dependências para Scanner e Câmera (ScannerScreen)
     implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
     implementation("androidx.camera:camera-core:1.3.4")
     implementation("androidx.camera:camera-camera2:1.3.4")
     implementation("androidx.camera:camera-lifecycle:1.3.4")
     implementation("androidx.camera:camera-view:1.3.4")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    
+    // Desugaring para suporte a APIs Java modernas
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 

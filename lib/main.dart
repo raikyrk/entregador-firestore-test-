@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // Importante para o login
+import 'package:shared_preferences/shared_preferences.dart'; 
+
 import 'firebase_options.dart';
 import 'login_screen.dart';
-import 'dashboard_screen.dart'; // Importante para ir direto ao painel
+import 'dashboard_screen.dart';
+import 'controllers/delivery_controller.dart'; // IMPORTANTE: Chama o novo controlador!
 
 // ==========================================
 // WIDGET UTILITÁRIO (Botão com Animação)
@@ -30,7 +32,8 @@ class _AnimatedScaleButtonState extends State<AnimatedScaleButton> {
       onTapCancel: () => setState(() => _scale = 1.0),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 100),
-        transform: Matrix4.identity()..scale(_scale),
+        // Correção de deprecation
+        transform: Matrix4.diagonal3Values(_scale, _scale, 1.0), 
         child: ElevatedButton(
           onPressed: widget.onPressed,
           style: ElevatedButton.styleFrom(
@@ -52,8 +55,13 @@ class _AnimatedScaleButtonState extends State<AnimatedScaleButton> {
 // ==========================================
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  
+  // 1. Carrega o .env primeiro!
   await dotenv.load(fileName: ".env");
+  
+  // 2. Inicializa o Firebase
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  
   runApp(const MyApp());
 }
 
@@ -81,13 +89,13 @@ class MyApp extends StatelessWidget {
           color: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: const Color(0xFFF28C38).withOpacity(0.1), width: 1),
+            // Correção de deprecation
+            side: BorderSide(color: const Color(0xFFF28C38).withValues(alpha: 0.1), width: 1),
           ),
           elevation: 2,
           margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
         ),
       ),
-      // AQUI MUDOU: Chamamos o AppBootstrap em vez do Login direto
       home: const AppBootstrap(),
     );
   }
@@ -114,13 +122,11 @@ class _AppBootstrapState extends State<AppBootstrap> with TickerProviderStateMix
   @override
   void initState() {
     super.initState();
-    // Animação bonita do ícone girando
     _spinController = AnimationController(duration: const Duration(seconds: 2), vsync: this)..repeat();
     _spinAnimation = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _spinController, curve: Curves.linear)
     );
     
-    // Começa a mágica
     _initializeApp();
   }
 
@@ -131,10 +137,8 @@ class _AppBootstrapState extends State<AppBootstrap> with TickerProviderStateMix
   }
 
   Future<void> _initializeApp() async {
-    // 1. Verifica Atualizações (Shorebird)
     await _checkShorebirdUpdates();
 
-    // 2. Verifica Login (SharedPreferences)
     if (mounted) {
       await _checkLoginAndNavigate();
     }
@@ -153,19 +157,20 @@ class _AppBootstrapState extends State<AppBootstrap> with TickerProviderStateMix
 
         await _shorebird.downloadUpdateIfAvailable();
 
-        setState(() => _message = "Atualizado com sucesso!");
-        await Future.delayed(const Duration(seconds: 1)); // Delay para ler a msg
+        setState(() {
+          _message = "Atualizado com sucesso!";
+          _isDownloading = false;
+        });
+        await Future.delayed(const Duration(seconds: 1));
       }
     } catch (e) {
-      // Se der erro no update, segue a vida (não trava o app)
-      print("Erro Shorebird: $e");
+      debugPrint("Erro Shorebird: $e");
     }
   }
 
   Future<void> _checkLoginAndNavigate() async {
     setState(() => _message = "Verificando credenciais...");
     
-    // Delay mínimo para a animação não ser "piscada" (opcional, remove sensação de bug)
     await Future.delayed(const Duration(milliseconds: 800));
 
     try {
@@ -175,10 +180,14 @@ class _AppBootstrapState extends State<AppBootstrap> with TickerProviderStateMix
       if (!mounted) return;
 
       if (entregador != null && entregador.isNotEmpty) {
-        // === USUÁRIO LOGADO -> DASHBOARD ===
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const DashboardScreen()),
-        );
+        // === USUÁRIO LOGADO -> LIGA O CÉREBRO E VAI PRO DASHBOARD ===
+        await DeliveryController.instance.initialize(); // OTIMIZAÇÃO: Inicia o Stream!
+        
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const DashboardScreen()),
+          );
+        }
       } else {
         // === NÃO LOGADO -> LOGIN ===
         Navigator.of(context).pushReplacement(
@@ -186,7 +195,6 @@ class _AppBootstrapState extends State<AppBootstrap> with TickerProviderStateMix
         );
       }
     } catch (e) {
-      // Erro de disco? Vai pro login por segurança
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -211,13 +219,12 @@ class _AppBootstrapState extends State<AppBootstrap> with TickerProviderStateMix
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Ícone Giratório
             RotationTransition(
               turns: _spinAnimation,
               child: Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.15),
+                  color: Colors.white.withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(Icons.sync, size: 60, color: Colors.white),
@@ -225,7 +232,6 @@ class _AppBootstrapState extends State<AppBootstrap> with TickerProviderStateMix
             ),
             const SizedBox(height: 40),
             
-            // Texto de Status
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
               child: Text(
@@ -244,12 +250,11 @@ class _AppBootstrapState extends State<AppBootstrap> with TickerProviderStateMix
             
             const SizedBox(height: 30),
             
-            // Barra de Progresso (só se estiver baixando)
             if (_isDownloading)
               SizedBox(
                 width: 200,
                 child: LinearProgressIndicator(
-                  backgroundColor: Colors.white.withOpacity(0.2),
+                  backgroundColor: Colors.white.withValues(alpha: 0.2),
                   valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
                 ),
               ),

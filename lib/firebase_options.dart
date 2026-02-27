@@ -1,10 +1,10 @@
-
+// firebase_options.dart
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Default [FirebaseOptions] 
-
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
@@ -31,49 +31,49 @@ class DefaultFirebaseOptions {
     }
   }
 
-  static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyCMEGw71T-RxFLtEbgEQ0iqhXiaHXa6HY0',
-    appId: '1:932043130642:web:e85183f93e41b65ee955cb',
-    messagingSenderId: '932043130642',
-    projectId: 'ao-gosto-app-c0b31',
-    authDomain: 'ao-gosto-app-c0b31.firebaseapp.com',
-    storageBucket: 'ao-gosto-app-c0b31.firebasestorage.app',
-    measurementId: 'G-VKQBFM2WER',
-  );
+  static FirebaseOptions get web => FirebaseOptions(
+        apiKey: dotenv.env['FIREBASE_API_KEY_WEB'] ?? '',
+        appId: dotenv.env['FIREBASE_APP_ID_WEB'] ?? '',
+        messagingSenderId: '932043130642',
+        projectId: 'ao-gosto-app-c0b31',
+        authDomain: 'ao-gosto-app-c0b31.firebaseapp.com',
+        storageBucket: 'ao-gosto-app-c0b31.firebasestorage.app',
+        measurementId: 'G-VKQBFM2WER',
+      );
 
-  static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDkXcfafUxaCIyqgminaGO4ZvPpPcIB7fw',
-    appId: '1:932043130642:android:b1c7706e4a4c8363e955cb',
-    messagingSenderId: '932043130642',
-    projectId: 'ao-gosto-app-c0b31',
-    storageBucket: 'ao-gosto-app-c0b31.firebasestorage.app',
-  );
+  static FirebaseOptions get android => FirebaseOptions(
+        apiKey: dotenv.env['FIREBASE_API_KEY_ANDROID'] ?? '',
+        appId: dotenv.env['FIREBASE_APP_ID_ANDROID'] ?? '',
+        messagingSenderId: '932043130642',
+        projectId: 'ao-gosto-app-c0b31',
+        storageBucket: 'ao-gosto-app-c0b31.firebasestorage.app',
+      );
 
-  static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAaRtV042woLZ3WeycVlL3ORsLWTkzi5S8',
-    appId: '1:932043130642:ios:c589a00afdfb7ba2e955cb',
-    messagingSenderId: '932043130642',
-    projectId: 'ao-gosto-app-c0b31',
-    storageBucket: 'ao-gosto-app-c0b31.firebasestorage.app',
-    iosBundleId: 'com.example.entregador',
-  );
+  static FirebaseOptions get ios => FirebaseOptions(
+        apiKey: dotenv.env['FIREBASE_API_KEY_IOS'] ?? '',
+        appId: dotenv.env['FIREBASE_APP_ID_IOS'] ?? '',
+        messagingSenderId: '932043130642',
+        projectId: 'ao-gosto-app-c0b31',
+        storageBucket: 'ao-gosto-app-c0b31.firebasestorage.app',
+        iosBundleId: 'com.example.entregador',
+      );
 
-  static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyAaRtV042woLZ3WeycVlL3ORsLWTkzi5S8',
-    appId: '1:932043130642:ios:c589a00afdfb7ba2e955cb',
-    messagingSenderId: '932043130642',
-    projectId: 'ao-gosto-app-c0b31',
-    storageBucket: 'ao-gosto-app-c0b31.firebasestorage.app',
-    iosBundleId: 'com.example.entregador',
-  );
+  static FirebaseOptions get macos => FirebaseOptions(
+        apiKey: dotenv.env['FIREBASE_API_KEY_MACOS'] ?? '',
+        appId: dotenv.env['FIREBASE_APP_ID_MACOS'] ?? '',
+        messagingSenderId: '932043130642',
+        projectId: 'ao-gosto-app-c0b31',
+        storageBucket: 'ao-gosto-app-c0b31.firebasestorage.app',
+        iosBundleId: 'com.example.entregador',
+      );
 
-  static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyCMEGw71T-RxFLtEbgEQ0iqhXiaHXa6HY0',
-    appId: '1:932043130642:web:e37421731c01f521e955cb',
-    messagingSenderId: '932043130642',
-    projectId: 'ao-gosto-app-c0b31',
-    authDomain: 'ao-gosto-app-c0b31.firebaseapp.com',
-    storageBucket: 'ao-gosto-app-c0b31.firebasestorage.app',
-    measurementId: 'G-M6CJ0WQPQP',
-  );
+  static FirebaseOptions get windows => FirebaseOptions(
+        apiKey: dotenv.env['FIREBASE_API_KEY_WINDOWS'] ?? '',
+        appId: dotenv.env['FIREBASE_APP_ID_WINDOWS'] ?? '',
+        messagingSenderId: '932043130642',
+        projectId: 'ao-gosto-app-c0b31',
+        authDomain: 'ao-gosto-app-c0b31.firebaseapp.com',
+        storageBucket: 'ao-gosto-app-c0b31.firebasestorage.app',
+        measurementId: 'G-M6CJ0WQPQP',
+      );
 }

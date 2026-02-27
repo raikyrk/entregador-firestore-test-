@@ -1,79 +1,62 @@
 // firebase_options.dart
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
-import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, kIsWeb, TargetPlatform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-/// Default [FirebaseOptions] 
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
-    if (kIsWeb) {
-      return web;
-    }
+    if (kIsWeb) return web;
     switch (defaultTargetPlatform) {
-      case TargetPlatform.android:
-        return android;
-      case TargetPlatform.iOS:
-        return ios;
-      case TargetPlatform.macOS:
-        return macos;
-      case TargetPlatform.windows:
-        return windows;
-      case TargetPlatform.linux:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for linux - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+      case TargetPlatform.android: return android;
+      case TargetPlatform.iOS: return ios;
+      case TargetPlatform.macOS: return macos;
+      case TargetPlatform.windows: return windows;
       default:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions are not supported for this platform.',
-        );
+        throw UnsupportedError('DefaultFirebaseOptions are not supported for this platform.');
     }
   }
+
+  // Atalhos para as variáveis repetidas
+  static String get _projId => dotenv.env['FIREBASE_PROJECT_ID'] ?? '';
+  static String get _senderId => dotenv.env['FIREBASE_MESSAGING_SENDER_ID'] ?? '';
+  static String get _bucket => dotenv.env['FIREBASE_STORAGE_BUCKET'] ?? '';
 
   static FirebaseOptions get web => FirebaseOptions(
         apiKey: dotenv.env['FIREBASE_API_KEY_WEB'] ?? '',
         appId: dotenv.env['FIREBASE_APP_ID_WEB'] ?? '',
-        messagingSenderId: '932043130642',
-        projectId: 'ao-gosto-app-c0b31',
-        authDomain: 'ao-gosto-app-c0b31.firebaseapp.com',
-        storageBucket: 'ao-gosto-app-c0b31.firebasestorage.app',
-        measurementId: 'G-VKQBFM2WER',
+        messagingSenderId: _senderId,
+        projectId: _projId,
+        authDomain: dotenv.env['FIREBASE_AUTH_DOMAIN_WEB'] ?? '',
+        storageBucket: _bucket,
+        measurementId: dotenv.env['FIREBASE_MEASUREMENT_ID_WEB'] ?? '',
       );
 
   static FirebaseOptions get android => FirebaseOptions(
         apiKey: dotenv.env['FIREBASE_API_KEY_ANDROID'] ?? '',
         appId: dotenv.env['FIREBASE_APP_ID_ANDROID'] ?? '',
-        messagingSenderId: '932043130642',
-        projectId: 'ao-gosto-app-c0b31',
-        storageBucket: 'ao-gosto-app-c0b31.firebasestorage.app',
+        messagingSenderId: _senderId,
+        projectId: _projId,
+        storageBucket: _bucket,
       );
 
   static FirebaseOptions get ios => FirebaseOptions(
         apiKey: dotenv.env['FIREBASE_API_KEY_IOS'] ?? '',
         appId: dotenv.env['FIREBASE_APP_ID_IOS'] ?? '',
-        messagingSenderId: '932043130642',
-        projectId: 'ao-gosto-app-c0b31',
-        storageBucket: 'ao-gosto-app-c0b31.firebasestorage.app',
-        iosBundleId: 'com.example.entregador',
+        messagingSenderId: _senderId,
+        projectId: _projId,
+        storageBucket: _bucket,
+        iosBundleId: dotenv.env['FIREBASE_IOS_BUNDLE_ID'] ?? '',
       );
 
-  static FirebaseOptions get macos => FirebaseOptions(
-        apiKey: dotenv.env['FIREBASE_API_KEY_MACOS'] ?? '',
-        appId: dotenv.env['FIREBASE_APP_ID_MACOS'] ?? '',
-        messagingSenderId: '932043130642',
-        projectId: 'ao-gosto-app-c0b31',
-        storageBucket: 'ao-gosto-app-c0b31.firebasestorage.app',
-        iosBundleId: 'com.example.entregador',
-      );
+  static FirebaseOptions get macos => ios;
 
   static FirebaseOptions get windows => FirebaseOptions(
         apiKey: dotenv.env['FIREBASE_API_KEY_WINDOWS'] ?? '',
         appId: dotenv.env['FIREBASE_APP_ID_WINDOWS'] ?? '',
-        messagingSenderId: '932043130642',
-        projectId: 'ao-gosto-app-c0b31',
-        authDomain: 'ao-gosto-app-c0b31.firebaseapp.com',
-        storageBucket: 'ao-gosto-app-c0b31.firebasestorage.app',
-        measurementId: 'G-M6CJ0WQPQP',
+        messagingSenderId: _senderId,
+        projectId: _projId,
+        authDomain: dotenv.env['FIREBASE_AUTH_DOMAIN_WEB'] ?? '',
+        storageBucket: _bucket,
+        measurementId: dotenv.env['FIREBASE_MEASUREMENT_ID_WINDOWS'] ?? '',
       );
 }

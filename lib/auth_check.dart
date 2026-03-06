@@ -19,8 +19,6 @@ class _AuthCheckState extends State<AuthCheck> {
   }
 
   Future<void> _checkLoginStatus() async {
-    // Pequeno delay artificial para a animação não ser um "piscar" de olhos
-    // e dar tempo do Firebase inicializar bem.
     await Future.delayed(const Duration(seconds: 2));
 
     try {
@@ -30,20 +28,17 @@ class _AuthCheckState extends State<AuthCheck> {
       if (!mounted) return;
 
       if (entregador != null && entregador.isNotEmpty) {
-        // JÁ LOGADO -> Vai direto pro Dashboard
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const DashboardScreen()),
         );
       } else {
-        // NÃO LOGADO -> Vai pro Login
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const LoginScreen()),
         );
       }
     } catch (e) {
-      // Se der erro no disco, manda pro login por segurança
       if (mounted) {
         Navigator.pushReplacement(
           context,
@@ -56,12 +51,11 @@ class _AuthCheckState extends State<AuthCheck> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF28C38), // Laranja da marca
+      backgroundColor: const Color(0xFFF28C38), 
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Logo ou Ícone
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -82,7 +76,6 @@ class _AuthCheckState extends State<AuthCheck> {
               ),
             ),
             const SizedBox(height: 30),
-            // Carregamento Moderno (Branco para contrastar com laranja)
             const CircularProgressIndicator(
               valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
             ),

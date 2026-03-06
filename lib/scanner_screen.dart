@@ -9,7 +9,6 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'constants/delivery_status.dart';
 
-// --- SERVICE LAYER ---
 class DeliveryService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -46,7 +45,6 @@ class DeliveryService {
   }
 }
 
-// --- UI SCREEN ---
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({super.key});
 
@@ -327,7 +325,6 @@ class _ScannerScreenState extends State<ScannerScreen> with TickerProviderStateM
   }
 }
 
-// --- CUSTOM PAINTERS ---
 
 class ScannerOverlayPainter extends CustomPainter {
   @override

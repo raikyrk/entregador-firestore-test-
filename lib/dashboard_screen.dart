@@ -69,7 +69,6 @@ class DashboardScreenState extends State<DashboardScreen> with TickerProviderSta
                         _buildDeliveriesAccessCard(context),
                         const SizedBox(height: 16),
                         
-                        // SE ESTIVER CARREGANDO, MOSTRA UM CARREGAMENTO EM CIMA DOS CARDS
                         if (ctrl.isLoading)
                           const Padding(
                             padding: EdgeInsets.symmetric(vertical: 20),
@@ -133,8 +132,6 @@ Widget _buildHeader(String name) {
               ),
             ],
           ),
-          // Removido o botão de logout. 
-          // Mantemos um ícone decorativo ou apenas o espaço para manter o alinhamento.
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(

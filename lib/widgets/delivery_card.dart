@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'delivery_details_sheet.dart'; // Importando o modal que criamos no passo anterior
+import 'delivery_details_sheet.dart'; 
 
 class DeliveryCard extends StatelessWidget {
   final Map<String, dynamic> delivery;
@@ -215,7 +215,7 @@ class DeliveryCard extends StatelessWidget {
                               message: 'Deseja marcar esta entrega como concluída?',
                               primaryAction: () {
                                 Navigator.pop(context);
-                                onComplete(); // Chama a função passada pela tela principal
+                                onComplete(); 
                               },
                               primaryLabel: 'Confirmar',
                               secondaryAction: () => Navigator.pop(context),
@@ -237,7 +237,7 @@ class DeliveryCard extends StatelessWidget {
                               message: 'O pedido voltará para a fila e o entregador será removido.',
                               primaryAction: () {
                                 Navigator.pop(context);
-                                onReturn(); // Chama a função passada pela tela principal
+                                onReturn(); 
                               },
                               primaryLabel: 'Devolver',
                               secondaryAction: () => Navigator.pop(context),
@@ -275,7 +275,6 @@ class DeliveryCard extends StatelessWidget {
     );
   }
 
-  // Trouxemos o diálogo para cá para o card ficar independente
   Widget _buildModernDialog({
     required BuildContext context,
     required IconData icon,

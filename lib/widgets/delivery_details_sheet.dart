@@ -15,7 +15,6 @@ class DeliveryDetailsSheet extends StatelessWidget {
   static const Color info = Color(0xFF4299E1);
   static const Color dark = Color(0xFF1A202C);
 
-  // Método estático para facilitar a chamada do modal de qualquer lugar
   static void show(BuildContext context, Map<String, dynamic> delivery) {
     showModalBottomSheet(
       context: context,
@@ -128,7 +127,6 @@ class DeliveryDetailsSheet extends StatelessWidget {
                           color: info,
                         ),
                       ),
-                      // Correção do erro aqui: Removido o spread problemático
                       if (hasValidPhone) ...[
                         const SizedBox(width: 12),
                         Expanded(

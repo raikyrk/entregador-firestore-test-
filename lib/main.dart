@@ -1,4 +1,4 @@
-// main.dart - VERSÃO FINAL (Auth Check + Shorebird + Splash Screen)
+// main.dart 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -8,11 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'login_screen.dart';
 import 'dashboard_screen.dart';
-import 'controllers/delivery_controller.dart'; // IMPORTANTE: Chama o novo controlador!
+import 'controllers/delivery_controller.dart'; 
 
-// ==========================================
-// WIDGET UTILITÁRIO (Botão com Animação)
-// ==========================================
+
 class AnimatedScaleButton extends StatefulWidget {
   final VoidCallback onPressed;
   final Widget child;
@@ -32,7 +30,6 @@ class _AnimatedScaleButtonState extends State<AnimatedScaleButton> {
       onTapCancel: () => setState(() => _scale = 1.0),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 100),
-        // Correção de deprecation
         transform: Matrix4.diagonal3Values(_scale, _scale, 1.0), 
         child: ElevatedButton(
           onPressed: widget.onPressed,
@@ -50,9 +47,7 @@ class _AnimatedScaleButtonState extends State<AnimatedScaleButton> {
   }
 }
 
-// ==========================================
-// MAIN APP
-// ==========================================
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
@@ -91,7 +86,6 @@ class MyApp extends StatelessWidget {
           color: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            // Correção de deprecation
             side: BorderSide(color: const Color(0xFFF28C38).withValues(alpha: 0.1), width: 1),
           ),
           elevation: 2,
@@ -103,9 +97,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// ==========================================
-// TELA DE INICIALIZAÇÃO (SPLASH + UPDATE + AUTH)
-// ==========================================
 class AppBootstrap extends StatefulWidget {
   const AppBootstrap({super.key});
 
@@ -182,8 +173,7 @@ class _AppBootstrapState extends State<AppBootstrap> with TickerProviderStateMix
       if (!mounted) return;
 
       if (entregador != null && entregador.isNotEmpty) {
-        // === USUÁRIO LOGADO -> LIGA O CÉREBRO E VAI PRO DASHBOARD ===
-        await DeliveryController.instance.initialize(); // OTIMIZAÇÃO: Inicia o Stream!
+        await DeliveryController.instance.initialize(); 
         
         if (mounted) {
           Navigator.of(context).pushReplacement(
@@ -191,7 +181,6 @@ class _AppBootstrapState extends State<AppBootstrap> with TickerProviderStateMix
           );
         }
       } else {
-        // === NÃO LOGADO -> LOGIN ===
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const LoginScreen()),
         );

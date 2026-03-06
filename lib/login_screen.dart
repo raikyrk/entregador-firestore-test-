@@ -7,11 +7,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http; 
 import 'dart:convert'; 
 
-// Importações do seu projeto
 import 'main.dart'; 
 import 'dashboard_screen.dart';
-import 'controllers/delivery_controller.dart'; // IMPORTANTE: Para resetar os dados no login
-
+import 'controllers/delivery_controller.dart'; 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -53,7 +51,6 @@ class LoginScreenState extends State<LoginScreen> {
     }
 
     try {
-      // 1. Busca o entregador pelo PIN (ID do documento)
       final doc = await FirebaseFirestore.instance
           .collection('entregadores')
           .doc(pin)
@@ -76,17 +73,13 @@ class LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // 2. Salva o novo nome localmente
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('entregador', nomeEntregador);
 
-      // 3. ATENÇÃO AQUI: Reinicializa o Controller com os dados do NOVO entregador
-      // Isso cancela os streams da conta antiga e assina os da nova conta.
       await DeliveryController.instance.initialize();
 
       if (!mounted) return;
 
-      // 4. Vai para o Dashboard com tudo limpo e atualizado
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const DashboardScreen()),
@@ -99,7 +92,6 @@ class LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // === VERIFICAÇÃO DE ATUALIZAÇÃO (MANTIDA IGUAL) ===
   Future<void> _verificarAtualizacao() async {
     try {
       final baseUrl = dotenv.env['API_BASE_URL'] ?? '';
@@ -153,7 +145,6 @@ class LoginScreenState extends State<LoginScreen> {
         ),
       );
     } catch (e) {
-      // Falha na rede não deve travar o login
     }
   }
 
@@ -167,7 +158,6 @@ class LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Logo/Título
               const Text(
                 'Login - Ao Gosto Carnes',
                 style: TextStyle(
@@ -178,7 +168,6 @@ class LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 32),
 
-              // Campo PIN
               SizedBox(
                 width: 200,
                 child: TextField(
@@ -203,7 +192,6 @@ class LoginScreenState extends State<LoginScreen> {
                 ),
               ),
 
-              // Mensagem de erro
               if (_errorMessage != null) ...[
                 const SizedBox(height: 16),
                 Text(
@@ -215,7 +203,6 @@ class LoginScreenState extends State<LoginScreen> {
 
               const SizedBox(height: 32),
 
-              // Botão Entrar (Usando o widget de animação do main.dart)
               AnimatedScaleButton(
                 onPressed: _login,
                 child: const Text(

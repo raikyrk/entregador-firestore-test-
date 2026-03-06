@@ -30,7 +30,6 @@ class DeliveryController extends ChangeNotifier {
   StreamSubscription? _completedSub;
 
   Future<void> initialize() async {
-    // Começa sempre como true para não mostrar lixo na tela
     isLoading = true; 
     notifyListeners();
 
@@ -54,7 +53,7 @@ class DeliveryController extends ChangeNotifier {
   void setDateRange(DateTime start, DateTime end) {
     startDate = DateTime(start.year, start.month, start.day);
     endDate = DateTime(end.year, end.month, end.day, 23, 59, 59);
-    isLoading = true; // Volta a carregar ao mudar a data
+    isLoading = true; 
     notifyListeners();
     _listenToCompleted();
   }

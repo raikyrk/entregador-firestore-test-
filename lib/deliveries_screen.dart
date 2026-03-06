@@ -80,7 +80,6 @@ class _DeliveriesScreenState extends State<DeliveriesScreen> with SingleTickerPr
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
 
-    // Escuta o Controller Central
     return ListenableBuilder(
       listenable: DeliveryController.instance,
       builder: (context, child) {
@@ -143,7 +142,6 @@ class _DeliveriesScreenState extends State<DeliveriesScreen> with SingleTickerPr
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Cabecalho com Infos
                           Container(
                             padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(

@@ -9,7 +9,6 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Suas dependências atuais (mantive tudo)
   mobile_scanner: ^7.0.1
   http: ^1.2.2
   intl: ^0.20.2
@@ -35,7 +34,6 @@ dependencies:
 
   cloud_firestore: ^5.4.4
 
-  # SHOREBIRD CORRETO (esse é o oficial!)
   shorebird_code_push: ^1.0.2
 
 dev_dependencies:

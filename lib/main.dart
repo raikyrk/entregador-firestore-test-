@@ -56,10 +56,12 @@ class _AnimatedScaleButtonState extends State<AnimatedScaleButton> {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // 1. Carrega o .env primeiro!
-  await dotenv.load(fileName: ".env");
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    debugPrint("Aviso: Falha ao carregar .env, mas o app vai continuar.");
+  }
   
-  // 2. Inicializa o Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   
   runApp(const MyApp());
